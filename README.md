@@ -26,7 +26,7 @@ appliance below runs it.
 | [**Quacken-35B-A3B-FP8**](https://huggingface.co/Gorilla4X/Quacken-35B-A3B-FP8) ⏳ | Qwen3.6-35B-A3B (MoE, Apache-2.0) | 35B-A3B | ~34 GB | soon | soon | soon |
 | [**Quacken-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quacken-Ornith-35B-FP8) ⏳ | Ornith-1.0-35B (Apache-2.0) | 35B | ~34 GB | soon | soon | soon |
 
-- **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/Gorilla4X) (all models, one place).
+- **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/collections/Gorilla4X/the-rock8-rdna4-fp8-6a547070f667cb41db0bc2ed) (all models, one place).
 - ⏳ = uploading / final validation in progress - each row's HF link goes live as the model lands (27B re-validating the authentic load path; 35B-A3B MoE + Ornith finishing their converter fixes).
 
 > PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on

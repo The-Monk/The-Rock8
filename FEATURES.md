@@ -30,7 +30,7 @@ yet usable, we say so plainly and explain what would unblock it.
 |---|---|---|
 | **MTP self-speculative decode** (`--spec-type draft-mtp`) | Uses the model's own next-token (MTP) head as the draft | Single-GPU interactive latency — decode **95 t/s > Vulkan 91** on Qwen3.6-27B. The single-GPU champion. |
 | **DFlash spec-decode** (`--draft-dflash`) | Q8/fp8 DFlash drafter + fp8 target | 1-GPU 52 t/s while leaving the 2nd GPU free for an agent fleet. |
-| **Async spec-decode pipeline** (`LLAMA_SPEC_ASYNC=2`) | Draft-gen ‖ verify on **separate GPUs** (disjoint compute) | **Dual-GPU only**: +75% vs sequential (draft on GPU1 while verify runs on GPU0). Requires a draft model + 2 cards. Opt-in via the env flag — see §3 for the auto-enable roadmap item. |
+| **Async spec-decode pipeline** (`LLAMA_SPEC_ASYNC=2`) | Draft-gen ‖ verify on **separate GPUs** (disjoint compute); needs a draft model + 2 cards | **A 2-GPU RDNA4 box serving one latency-critical stream** — a local coding assistant, an interactive chat, or an agent loop where you want the highest tokens/sec and have both cards. The draft model sits on GPU1 generating candidates *while* GPU0 verifies the previous batch, so neither card idles → **+75% decode vs running them serially**. Single-GPU is a wash (the two saturating kernels time-share one card), so this is specifically a *dual-card* lever; auto-enable when 2 GPUs + a draft are detected is on the roadmap. |
 | **Register-spill fixes** | fattn-vec fp8-KV (hd128/256, ncols=2) → 0 spill; mmq fp8/bf8/mxfp8 48-tile → 0 spill | Removes VGPR spills in fp8-KV + spec-decode/batched-verify, and in specific prefill batch widths (+17.8% on the 48-tile). Automatic — no flag. |
 
 ### Operations

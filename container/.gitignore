@@ -1,0 +1,8 @@
+# Staged build context — hardlinked TheRock libs (2.7G) and llama.cpp binaries (31M).
+# These are assembled at build time from ~/.cache/lemonade/bin/therock and build-tr713;
+# never commit them. See README.md for how the Containerfile stages them.
+therock/
+llama/
+*.tar
+*.tar.gz
+*.gguf

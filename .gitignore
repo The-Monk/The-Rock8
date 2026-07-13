@@ -1,0 +1,5 @@
+*.gguf
+therock/
+llama/
+*.tar
+*.tar.gz

@@ -1,0 +1,50 @@
+# ROC8 + Lemonade portability appliance — PURE TheRock ROCm 7.13, zero /opt/rocm-7.2.4
+# Card 124 ship/portability gate. Base: ubuntu:24.04.
+#
+# Build context must contain:
+#   therock/   -> copy of gfx1201-7.13.0 (lib/ + lib/llvm/lib/)
+#   llama/     -> build-tr713/bin (ROC8 binaries + libggml/libllama .so)
+# Model is NOT baked (bind-mount at runtime, like any Lemonade model dir).
+FROM docker.io/library/ubuntu:24.04
+
+# ---- OS closure ----------------------------------------------------------
+# libatomic1 is the ONLY OS package the llama.cpp binaries need beyond the
+# ubuntu:24.04 base (libstdc++6/libgcc_s1 already present). numa/drm/elf are
+# bundled by TheRock under lib/rocm_sysdeps; libomp comes from lib/llvm/lib.
+# python3/venv/pip/curl are for the Lemonade server layer.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libatomic1 \
+      python3 python3-venv python3-pip \
+      curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# ---- ROCm 7.13 runtime (TheRock) + ROC8 llama.cpp binaries ---------------
+COPY therock/ /opt/therock/
+COPY llama/   /opt/llama/
+
+ENV LD_LIBRARY_PATH=/opt/llama:/opt/therock/lib:/opt/therock/lib/llvm/lib \
+    HIP_VISIBLE_DEVICES=0 \
+    PATH=/opt/venv/bin:/opt/llama:$PATH
+
+# ---- Lemonade server (pip) + wire its rocm backend to our binaries -------
+RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+ && /opt/venv/bin/pip install --no-cache-dir lemonade-sdk
+
+# Pre-seed lemonade's rocm llama_server slot with OUR build-tr713 binaries so
+# it never downloads the stock lemonade-sdk/llamacpp-rocm build. version.txt
+# and backend.txt match LLAMA_VERSION_ROCM so install_llamacpp() short-circuits.
+RUN SLOT="$(/opt/venv/bin/python -c 'import sys;print(sys.prefix)')/rocm/llama_server/build/bin" \
+ && mkdir -p "$SLOT" \
+ && for f in /opt/llama/*; do ln -sf "$f" "$SLOT/$(basename "$f")"; done \
+ && printf 'b1066' > "$(dirname "$(dirname "$SLOT")")/version.txt" \
+ && printf 'rocm'  > "$(dirname "$(dirname "$SLOT")")/backend.txt"
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Lemonade default port
+EXPOSE 13305
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["serve"]

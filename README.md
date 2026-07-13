@@ -22,11 +22,11 @@ appliance below runs it.
 |---|---|---|---:|---:|---:|---:|
 | [**Quack-8B-FP8**](https://huggingface.co/Gorilla4X/Quack-8B-FP8) | [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache-2.0) | 8B | 9.2 GB | 10.93 | 4688 | 58.0 |
 | [**Quack-R1-14B-FP8**](https://huggingface.co/Gorilla4X/Quack-R1-14B-FP8) | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B) (MIT) | 14B | 16 GB | 8.97 | 2499 | 33.4 |
-| [**Quack-27B-FP8**](https://huggingface.co/Gorilla4X/Quack-27B-FP8) | Qwen3.6-27B (Apache-2.0) | 27B | 29.3 GiB | 6.81 | 1071 | 17.7 (2-GPU) |
 
 - **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/Gorilla4X) (all models, one place).
-- **2 more coming:** Qwen3.6-35B-A3B (MoE) fp8 and Ornith-1.0-35B fp8 are in final
-  validation and will be added to the collection + linked here when they land.
+- **3 more coming:** Quack-27B-FP8 (Qwen3.6-27B, Apache-2.0 - re-validating the
+  authentic load path), plus Qwen3.6-35B-A3B (MoE) fp8 and Ornith-1.0-35B fp8.
+  They will be added to the collection + linked here when they land.
 
 > PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on
 > gfx1201 (R9700); the 27B decode figure is 2-GPU (tensor-split).
@@ -157,5 +157,5 @@ is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT).
 The published model weights are **derivatives** and carry their **source model's
 license** - attributed on each model card:
 Quack-8B-FP8 (Apache-2.0, from Qwen/Qwen3-8B),
-Quack-R1-14B-FP8 (MIT, from DeepSeek-R1-Distill-Qwen-14B),
-Quack-27B-FP8 (Apache-2.0, from Qwen3.6-27B).
+Quack-R1-14B-FP8 (MIT, from DeepSeek-R1-Distill-Qwen-14B).
+Coming: Quack-27B-FP8 (Apache-2.0, from Qwen3.6-27B).

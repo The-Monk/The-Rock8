@@ -75,7 +75,7 @@ cannot do for low-precision inference.
 ---
 
 ## 4. Where to get it
-- **Models:** the *The Rock8 — RDNA4 fp8* collection on Hugging Face (`Quack-*-FP8`) — each Quark-quantized from full-precision BF16, with PPL + throughput benches on gfx1201.
+- **Models:** the *The Rock8 — RDNA4 fp8* collection on Hugging Face (`Quacken-*-FP8`) — each Quark-quantized from full-precision BF16, with PPL + throughput benches on gfx1201.
 - **Container:** `ghcr.io` / Docker Hub / Quay.io — `the-rock8:rdna4-tr713` (podman *and* docker pull the same image; use `--runtime crun` for GPU).
 - **Source:** the `The-Rock8` GitHub repo — kernels, patch series, appliance recipe, and these docs.
 

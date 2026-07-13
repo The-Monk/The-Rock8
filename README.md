@@ -20,14 +20,14 @@ appliance below runs it.
 
 | Model | Source (license) | Params | GGUF | PPL | pp512 (t/s) | tg128 (t/s) |
 |---|---|---|---:|---:|---:|---:|
-| [**Quack-8B-FP8**](https://huggingface.co/Gorilla4X/Quack-8B-FP8) | [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache-2.0) | 8B | 9.2 GB | 10.93 | 4688 | 58.0 |
-| [**Quack-R1-14B-FP8**](https://huggingface.co/Gorilla4X/Quack-R1-14B-FP8) | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B) (MIT) | 14B | 16 GB | 8.97 | 2499 | 33.4 |
-| [**Quack-27B-FP8**](https://huggingface.co/Gorilla4X/Quack-27B-FP8) ⏳ | Qwen3.6-27B (Apache-2.0) | 27B | ~29 GB | 6.81 | soon | soon |
-| [**Quack-35B-A3B-FP8**](https://huggingface.co/Gorilla4X/Quack-35B-A3B-FP8) ⏳ | Qwen3.6-35B-A3B (MoE, Apache-2.0) | 35B-A3B | ~34 GB | soon | soon | soon |
-| [**Quack-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quack-Ornith-35B-FP8) ⏳ | Ornith-1.0-35B (Apache-2.0) | 35B | ~34 GB | soon | soon | soon |
+| [**Quacken-8B-FP8**](https://huggingface.co/Gorilla4X/Quacken-8B-FP8) | [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache-2.0) | 8B | 9.2 GB | 10.93 | 4688 | 58.0 |
+| [**Quacken-R1-14B-FP8**](https://huggingface.co/Gorilla4X/Quacken-R1-14B-FP8) | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B) (MIT) | 14B | 16 GB | 8.97 | 2499 | 33.4 |
+| [**Quacken-27B-FP8**](https://huggingface.co/Gorilla4X/Quacken-27B-FP8) ⏳ | Qwen3.6-27B (Apache-2.0) | 27B | ~29 GB | 6.81 | soon | soon |
+| [**Quacken-35B-A3B-FP8**](https://huggingface.co/Gorilla4X/Quacken-35B-A3B-FP8) ⏳ | Qwen3.6-35B-A3B (MoE, Apache-2.0) | 35B-A3B | ~34 GB | soon | soon | soon |
+| [**Quacken-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quacken-Ornith-35B-FP8) ⏳ | Ornith-1.0-35B (Apache-2.0) | 35B | ~34 GB | soon | soon | soon |
 
 - **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/Gorilla4X) (all models, one place).
-- ⏳ = uploading / final validation in progress — each row's HF link goes live as the model lands (27B re-validating the authentic load path; 35B-A3B MoE + Ornith finishing their converter fixes).
+- ⏳ = uploading / final validation in progress - each row's HF link goes live as the model lands (27B re-validating the authentic load path; 35B-A3B MoE + Ornith finishing their converter fixes).
 
 > PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on
 > gfx1201 (R9700); the 27B decode figure is 2-GPU (tensor-split).
@@ -108,17 +108,17 @@ podman pull ghcr.io/the-monk/the-rock8:rdna4-tr713
 podman pull docker.io/gorilla4x/the-rock8:rdna4-tr713
 podman pull quay.io/the-monk/the-rock8:rdna4-tr713
 
-# serve a downloaded Quack GGUF (mount the model dir; crun is mandatory for GPU)
+# serve a downloaded Quacken GGUF (mount the model dir; crun is mandatory for GPU)
 podman run -d --rm --runtime crun --name lemonade \
   --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
   -v /path/to/quack-8b:/models:ro \
-  -e MODEL=/models/Qwen3-8B-Quark-F8E4M3.gguf -e MODEL_NAME=Quack-8B-FP8 \
+  -e MODEL=/models/Qwen3-8B-Quark-F8E4M3.gguf -e MODEL_NAME=Quacken-8B-FP8 \
   -e HIP_VISIBLE_DEVICES=0 -p 13305:13305 \
   ghcr.io/the-monk/the-rock8:rdna4-tr713 serve
 
 curl -s http://localhost:13305/api/v1/chat/completions -H 'Content-Type: application/json' \
-  -d '{"model":"user.Quack-8B-FP8","messages":[{"role":"user","content":"Capital of France? one word /no_think"}],"max_tokens":16}'
+  -d '{"model":"user.Quacken-8B-FP8","messages":[{"role":"user","content":"What do you call a dried grape? Answer in one word. /no_think"}],"max_tokens":16}'
 ```
 
 See [`container/`](container/) for the Containerfile, entrypoint, and the full
@@ -130,7 +130,7 @@ portability writeup ([`container/README.md`](container/README.md)).
 llama-bench -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -p 512 -n 128
 
 # chat
-llama-cli  -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -p "The capital of France is"
+llama-cli  -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -p "What do you call a dried grape? Answer in one word."
 
 # 27B is 2-GPU (tensor-split across two 32 GB cards)
 llama-bench -m Qwen3.6-27B-Quark-F8E4M3.gguf -ngl 999   # sees both R9700s
@@ -139,7 +139,7 @@ llama-bench -m Qwen3.6-27B-Quark-F8E4M3.gguf -ngl 999   # sees both R9700s
 ---
 
 ## 5. Where to get it (every artifact links to the others)
-- **Models:** the *The Rock8 - RDNA4 fp8* collection on Hugging Face (`Quack-*-FP8`), under
+- **Models:** the *The Rock8 - RDNA4 fp8* collection on Hugging Face (`Quacken-*-FP8`), under
   [Gorilla4X](https://huggingface.co/Gorilla4X) - each Quark-quantized from full-precision BF16,
   with PPL + throughput benches on gfx1201.
 - **Container:** `ghcr.io` / Docker Hub / Quay.io - `the-rock8:rdna4-tr713`
@@ -157,6 +157,6 @@ The Rock8 tooling and appliance recipes in this repo are MIT-licensed (this repo
 is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT).
 The published model weights are **derivatives** and carry their **source model's
 license** - attributed on each model card:
-Quack-8B-FP8 (Apache-2.0, from Qwen/Qwen3-8B),
-Quack-R1-14B-FP8 (MIT, from DeepSeek-R1-Distill-Qwen-14B).
-Coming: Quack-27B-FP8 (Apache-2.0, from Qwen3.6-27B).
+Quacken-8B-FP8 (Apache-2.0, from Qwen/Qwen3-8B),
+Quacken-R1-14B-FP8 (MIT, from DeepSeek-R1-Distill-Qwen-14B).
+Coming: Quacken-27B-FP8 (Apache-2.0, from Qwen3.6-27B).

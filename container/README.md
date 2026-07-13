@@ -9,7 +9,7 @@ Rootless Podman on Zorin-AI (Ubuntu 24.04 base, ZFS root, dual R9700 gfx1201).
 - GPU: `llama-bench` runs on gfx1201 (R9700), matches host-forced-7.13 within noise.
 - PPL: **byte-identical** to host-forced-7.13 (11.0282 ± 0.486) — the 7.2.4-rocBLAS-under-
   7.13-kernels host hybrid did NOT affect results (forced-7.13 == container-7.13).
-- Lemonade OpenAI endpoint returns **"Paris"** through the rocm backend (our llama-server).
+- Lemonade OpenAI endpoint returns **"raisin"** through the rocm backend (our llama-server).
 
 ## Shippable base-image contents
 - Base: `ubuntu:24.04`
@@ -43,7 +43,7 @@ podman run -d --rm --runtime crun --name lemonade \
   roc8-lemonade:tr713 serve
 # model auto-registered as user.Qwen3-8B-FP8, backend=rocm
 curl -s http://localhost:13305/api/v1/chat/completions -H 'Content-Type: application/json' \
-  -d '{"model":"user.Qwen3-8B-FP8","messages":[{"role":"user","content":"Capital of France? one word /no_think"}],"max_tokens":16}'
+  -d '{"model":"user.Qwen3-8B-FP8","messages":[{"role":"user","content":"What do you call a dried grape? Answer in one word. /no_think"}],"max_tokens":16}'
 ```
 
 ## Run — bench / ppl directly (no bind-mounts except the model)

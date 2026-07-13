@@ -35,7 +35,7 @@ curl -s -m 5 http://localhost:${PORT}/api/v1/models 2>/dev/null | head -c 600; e
 echo "=== chat completion THROUGH lemonade ==="
 RESP=$(curl -s -m 180 http://localhost:${PORT}/api/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"user.Qwen3-8B-FP8","messages":[{"role":"user","content":"What is the capital of France? One word. /no_think"}],"max_tokens":32,"temperature":0}')
+  -d '{"model":"user.Qwen3-8B-FP8","messages":[{"role":"user","content":"What do you call a dried grape? Answer in one word. /no_think"}],"max_tokens":32,"temperature":0}')
 echo "$RESP" | tee $SC/lemonade_resp.json | head -c 1200; echo
 echo "=== extracted content ==="
 echo "$RESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["choices"][0]["message"]["content"])' 2>/dev/null || echo "(parse failed)"

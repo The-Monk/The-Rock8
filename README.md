@@ -22,11 +22,12 @@ appliance below runs it.
 |---|---|---|---:|---:|---:|---:|
 | [**Quack-8B-FP8**](https://huggingface.co/Gorilla4X/Quack-8B-FP8) | [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache-2.0) | 8B | 9.2 GB | 10.93 | 4688 | 58.0 |
 | [**Quack-R1-14B-FP8**](https://huggingface.co/Gorilla4X/Quack-R1-14B-FP8) | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B) (MIT) | 14B | 16 GB | 8.97 | 2499 | 33.4 |
+| [**Quack-27B-FP8**](https://huggingface.co/Gorilla4X/Quack-27B-FP8) ⏳ | Qwen3.6-27B (Apache-2.0) | 27B | ~29 GB | 6.81 | soon | soon |
+| [**Quack-35B-A3B-FP8**](https://huggingface.co/Gorilla4X/Quack-35B-A3B-FP8) ⏳ | Qwen3.6-35B-A3B (MoE, Apache-2.0) | 35B-A3B | ~34 GB | soon | soon | soon |
+| [**Quack-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quack-Ornith-35B-FP8) ⏳ | Ornith-1.0-35B (Apache-2.0) | 35B | ~34 GB | soon | soon | soon |
 
 - **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/Gorilla4X) (all models, one place).
-- **3 more coming:** Quack-27B-FP8 (Qwen3.6-27B, Apache-2.0 - re-validating the
-  authentic load path), plus Qwen3.6-35B-A3B (MoE) fp8 and Ornith-1.0-35B fp8.
-  They will be added to the collection + linked here when they land.
+- ⏳ = uploading / final validation in progress — each row's HF link goes live as the model lands (27B re-validating the authentic load path; 35B-A3B MoE + Ornith finishing their converter fixes).
 
 > PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on
 > gfx1201 (R9700); the 27B decode figure is 2-GPU (tensor-split).

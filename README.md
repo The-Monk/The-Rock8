@@ -112,7 +112,7 @@ podman pull quay.io/the-monk/the-rock8:rdna4-tr713
 podman run -d --rm --runtime crun --name lemonade \
   --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
-  -v /path/to/quack-8b:/models:ro \
+  -v /path/to/quacken-8b:/models:ro \
   -e MODEL=/models/Qwen3-8B-Quark-F8E4M3.gguf -e MODEL_NAME=Quacken-8B-FP8 \
   -e HIP_VISIBLE_DEVICES=0 -p 13305:13305 \
   ghcr.io/the-monk/the-rock8:rdna4-tr713 serve

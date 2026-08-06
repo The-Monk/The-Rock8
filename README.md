@@ -49,6 +49,40 @@ appliance below runs it.
 | **2:4 structured-sparse fp8** (`2OF4_FP8`, SWMMAC) | RDNA4 2:4 sparse-tensor-core fp8 | Trained-2:4-sparse models (e.g. Sparse-Llama) at fp8 - 5.5 bpw, sparse-tensor-core throughput. |
 | **2:4 structured-sparse fp16** (`2OF4_F16`, SWMMAC) | RDNA4 2:4 sparse f16 A/B | Trained-2:4-sparse models with **no quantization loss** - full-precision values on the sparse tensor cores. |
 
+### Every weight format the driver reads
+
+Complete list of what `roc8` decodes, with the block layout each one actually
+uses. Everything here is dispatchable — these are `GGML_TYPE_*` entries, not
+aspirations.
+
+| Format | Block | Scale | Leaf encoding |
+|---|---|---|---|
+| **Q1_0** | 128 elem / 16 B | fp16 per block | 1 bit, {-1,+1} |
+| **Q2_0** | 128 elem / 32 B | fp16 per block | 2 bit ternary, {-1,0,+1} |
+| **Q4_0** | 32 elem / 16 B | fp16 per block | 4 bit unsigned, value = n-8 |
+| **Q5_0** | 32 elem / 20 B | fp16 per block | 4 bit + a 5th bit-plane in `qh`, value = n-16 |
+| **Q8_0** | 32 elem / 32 B | fp16 per block | signed int8 |
+| **Q2_K … Q6_K** | 256-elem superblocks | multi-level | upstream ggml K-quants, unmodified |
+| **IU4** | packed uniform int4 | — | native `v_wmma_i32_16x16x32_iu4` W4A4; dormant, see §2 |
+| **F8E4M3** | 32 elem / 34 B | fp16 per block | OCP e4m3fn — 4 exp / 3 mantissa, bias 7 |
+| **F8E5M2** | 32 elem / 34 B | fp16 per block | OCP bf8 — 5 exp / 2 mantissa, real ±Inf and NaN |
+| **MXFP4** | 32 elem / 17 B | **UE8M0**, 2^(e-127) | OCP E2M1 — 2 exp / 1 mantissa, nibble-packed |
+| **MXFP6** | 32 elem / 25 B | **UE8M0**, 2^(e-127) | OCP E3M2 — 3 exp / 2 mantissa, 4 values per 3 bytes |
+| **MXFP8** | 32 elem / 33 B | **UE8M0**, 2^(e-127) | OCP e4m3fn, same leaf as F8E4M3 |
+| **NVFP4** | 64 elem / 36 B | **UE4M3 ×4**, one per 16 | E2M1 leaf with finer-grained sub-block scales |
+| **2:4-sparse fp8 / fp16** | SWMMAC fragments | — | structured sparsity on the sparse tensor cores |
+
+Three scale conventions appear above and they are not interchangeable: a
+continuous **fp16** delta (the Q-series and F8E*), a shared power-of-two
+**UE8M0** exponent byte (the MX series, OCP microscaling), and **UE4M3**
+per-sub-block scales (NVFP4). A decoder that assumes fp16 will silently
+mis-scale every MX tensor it touches.
+
+> **On "AMD FP4":** there isn't one, and we do not ship a format by that name.
+> AMD's 4-bit path is **MXFP4**, the OCP Microscaling standard. **NVFP4** is
+> NVIDIA's variant of the same E2M1 leaf with finer-grained UE4M3 scales; we read
+> it so NVIDIA-quantised checkpoints load, not because it is an AMD format.
+
 ### Low-bit weight formats
 
 | Feature | What it is | When to use it |

@@ -2,7 +2,7 @@
 # Validate the BUILT image (no therock/llama bind-mounts — only /models).
 set -uo pipefail
 IMG=roc8-lemonade:tr713
-MODELS=/aipool/models/qwen3-8b-fp8
+MODELS=${MODELS:?set MODELS to the directory holding your GGUFs}
 SC=/tmp/claude-1000/-home-jmonk/5f7e73a6-0432-4b0d-b7aa-bae8db6133e2/scratchpad
 RUN="podman run --rm --runtime crun --device /dev/kfd --device /dev/dri --group-add keep-groups --security-opt seccomp=unconfined -v $MODELS:/models:ro"
 
@@ -18,7 +18,7 @@ $RUN --entrypoint /opt/llama/llama-bench $IMG \
   -m /models/Qwen3-8B-F8E4M3.gguf -p 128 -n 32 -ngl 99 2>&1 | grep -iE "Device 0|qwen3|error" | tee $SC/img_bench.txt
 
 echo "########## C) llama-perplexity from built image ##########"
-$RUN -v /aipool/models/qwen3.6-27b-bf16-mtp/test-run/wikitext/wikitext-2-raw:/wiki:ro \
+$RUN -v ${WIKITEXT:?set WIKITEXT to your wikitext-2-raw directory}:/wiki:ro \
   --entrypoint /opt/llama/llama-perplexity $IMG \
   -m /models/Qwen3-8B-F8E4M3.gguf -f /wiki/wiki.test.raw --chunks 20 -ngl 99 2>&1 | grep -iE "Final estimate" | tee $SC/img_ppl.txt
 

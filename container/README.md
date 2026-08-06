@@ -2,7 +2,7 @@
 
 Containerized portability test proving the ROC8 (mxfp8 fork, `build-tr713`) + Lemonade
 stack is genuinely self-contained on **TheRock ROCm 7.13 only**, with **zero `/opt/rocm-7.2.4`**.
-Rootless Podman on Zorin-AI (Ubuntu 24.04 base, ZFS root, dual R9700 gfx1201).
+Rootless Podman on an Ubuntu 24.04 host with dual Radeon AI PRO R9700 (gfx1201).
 
 ## Result: YES — the full stack runs on pure TheRock 7.13.
 - ldd closure: 100% resolved to the image's `/opt/therock` + `/opt/llama`, **zero `/opt/rocm`**.
@@ -26,9 +26,12 @@ Rootless Podman here defaulted to **runc**, which silently ignores `--group-add 
 (a crun-only annotation) → `/dev/kfd` (group `render`/992) stays inaccessible → HIP reports
 "no ROCm-capable device". **Fix: `crun` is installed; always run with `--runtime crun`.**
 
+> Set `MODELS` to wherever your GGUFs live, e.g.
+> `export MODELS=/path/to/models/qwen3-8b-fp8`
+
 ## Build
 ```
-cd /home/jmonk/src/mainline-llama.cpp-mxfp8/container
+cd container        # from the root of this repository
 # context already staged: therock/ (TheRock gfx1201-7.13.0 lib tree), llama/ (build-tr713 bin)
 podman build --runtime crun -t roc8-lemonade:tr713 -f Containerfile .
 ```
@@ -38,7 +41,7 @@ podman build --runtime crun -t roc8-lemonade:tr713 -f Containerfile .
 podman run -d --rm --runtime crun --name lemonade \
   --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
-  -v /aipool/models/qwen3-8b-fp8:/models:ro \
+  -v "$MODELS:/models:ro" \
   -e HIP_VISIBLE_DEVICES=0 -p 13305:13305 \
   roc8-lemonade:tr713 serve
 # model auto-registered as user.Qwen3-8B-FP8, backend=rocm
@@ -50,7 +53,7 @@ curl -s http://localhost:13305/api/v1/chat/completions -H 'Content-Type: applica
 ```
 podman run --rm --runtime crun --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
-  -v /aipool/models/qwen3-8b-fp8:/models:ro roc8-lemonade:tr713 bench
+  -v "$MODELS:/models:ro" roc8-lemonade:tr713 bench
 # or:  ... roc8-lemonade:tr713 ppl -f /wiki/wiki.test.raw --chunks 20 -ngl 99   (mount /wiki)
 ```
 

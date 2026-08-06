@@ -10,6 +10,8 @@ Everything below is **validated on real gfx1201 hardware** (dual R9700), against
 the RDNA4 ISA, not inferred from benchmarks alone. Where a capability is *not*
 yet usable, we say so plainly and explain what would unblock it.
 
+**Kernel source:** [The-Monk/llama.cpp, branch `roc8`](https://github.com/The-Monk/llama.cpp/tree/roc8)
+
 ---
 
 ## The Rock8 - RDNA4 fp8 models (Hugging Face)
@@ -155,8 +157,12 @@ llama-bench -m Qwen3.6-27B-Quark-F8E4M3.gguf -ngl 999   # sees both R9700s
 
 ## License
 
-The Rock8 tooling and appliance recipes in this repo are MIT-licensed (this repo
-is a fork of [llama.cpp](https://github.com/ggml-org/llama.cpp), MIT).
+The Rock8 tooling and appliance recipes in this repo are MIT-licensed. The kernel
+work itself lives in our llama.cpp fork, branch `roc8`:
+**https://github.com/The-Monk/llama.cpp/tree/roc8** — which is a fork of
+[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT, (c) the ggml
+authors). All credit for llama.cpp belongs upstream; none of this is upstreamed
+and it carries no endorsement from the llama.cpp maintainers.
 The published model weights are **derivatives** and carry their **source model's
 license** - attributed on each model card:
 Quacken-8B-FP8 (Apache-2.0, from Qwen/Qwen3-8B),

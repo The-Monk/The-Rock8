@@ -101,6 +101,59 @@ mis-scale every MX tensor it touches.
 
 > **Why the routes are opt-in.** The gate keys on the batch dimension M against a scalar threshold, but the win is **shape-dependent**: the same route and threshold gives **+32.7% on an 8B model and -38.2% on a 24B** at overlapping batch sizes. The crossover moves at least 4x with model shape, so a threshold correct for one model is a large regression for another. We would rather ship a conservative default than a fast one that is wrong off-box. Measured in `benchmarks/crossover.sh` of the hackathon repo below.
 
+### The prefill routes, and how to drive them
+
+Nine per-format hipBLASLt routes. Each dequantises the weight to int8 or fp8 and
+dispatches to Tensile, and each is **off by default** -- see the shape-dependence
+note below for why. Every route exposes the same six knobs:
+
+| env var | effect |
+|---|---|
+| `GGML_HIP_<FMT>_HIPBLASLT_PREFILL=1` | enable the route at all |
+| `GGML_HIP_<FMT>_HIPBLASLT_MTHRESH=<n>` | minimum batch M before the route engages; below it, the stock kernel runs |
+| `GGML_HIP_<FMT>_HIPBLASLT_FP8=1` | dequantise to fp8 instead of int8 -- more accurate for higher-bpw formats, since fp8's exponent preserves per-block range that int8 collapses |
+| `GGML_HIP_<FMT>_HIPBLASLT_TUNE_CACHE=<path>` | where to persist the per-shape algorithm choice |
+| `GGML_HIP_<FMT>_HIPBLASLT_NOTUNE=1` | skip tuning; use the heuristic pick |
+| `GGML_HIP_<FMT>_HIPBLASLT_WCACHE_MB=<n>` | cap the dequantised-weight cache |
+
+`<FMT>` is one of **`Q1_0` `Q2_0` `Q4_K` `Q8_0` `F8E4M3` `MXFP6` `MXFP8` `IU4` `F16`**.
+Global escape hatch: `GGML_HIP_NO_HIPBLASLT=1` disables all of them.
+
+The self-tuning cache exists because gfx1201 has no hipBLASLt cost model -- the
+heuristic mis-picks badly (163 vs 318 TOP/s on an ffn-down shape). The cache
+stores the *index*, not the algorithm blob; restoring a blob segfaults.
+
+> **F16 is disabled deliberately.** It is a net regression at production shapes
+> and stays off; the flag exists for measurement, not for use.
+
+### Decode-side levers
+
+| env var | what it does |
+|---|---|
+| `GGML_HIP_DEDUP_MMVQ_QUANT=1` | share identical weight reads across a decode step (also `_BATCH`, `_FP8`) |
+| `GGML_HIP_IU4_MMQ=1` | int4 MMQ path |
+| `GGML_HIP_F16_DOT2_DECODE=1` | `v_dot2_f32_f16` decode -- measured a **loss** single-issue; kept for reproducibility |
+| `GGML_HIP_F8E5M2_DOT4=1` | bf8 decode dot |
+| `GGML_HIP_FUSE_MMVQ_QUANT=1` | fuse activation quantisation into the GEMV |
+| `GGML_HIP_BINARY_GEMV_NWARPS` / `_ROWS_PER_BLOCK` | launch geometry for the Q1_0 binary GEMV |
+
+Roughly **123 `GGML_HIP_*` flags** exist in total, most of them experiment
+switches for the 2:4-sparse and dense-fp8 MMQ variants (`_V2`, `_V3`,
+`_ADAPTIVE`, `_ILP`, `_GEOM`, `_KPS`, `_SHAPE_BENCH`). They are research
+scaffolding, not a supported interface -- the table above is what is meant to be
+driven.
+
+### What is actually in the fork
+
+32 kernel sources that upstream llama.cpp does not have:
+
+- **decode** -- `mmvq_iu4.cu`, `mmvq_dot2f16.cu`, `mul_mat_q2_0_gemv.cu`, `mul_mat_iu4_gemv.cu`
+- **prefill routes** -- `mul_mat_{q1_0,q2_0,q4_K,q8_0,f8e4m3,mxfp6,mxfp8,iu4,f16}_hipblaslt.cu`
+- **dense fp8 MMQ** -- `mul_mat_dense_fp8_mmq.cu`, `mul_mat_dense_fp8_v3.cu`
+- **2:4 sparse** -- `mul_mat_2of4_{f16,fp8,fp8_mmq,iu4_k64}.cu`, `swmmac24{,_iu4_fixed,_iu4_k64}.cu`
+- **int4 W4A4** -- `iu4_w4a4.cu`, `mul_mat_iu4{,_mmq,_ck_wmma}.cu`
+- **infrastructure** -- `hipblaslt_wcache.cu` (weight-cache invalidation), `quantize_fp8_sr.cu` (stochastic rounding), `mxfp8_selftest.cu`, `dot2_bf16_probe.cu`
+
 ### Correctness fixes (not performance -- just bugs)
 
 | Fix | What was wrong |

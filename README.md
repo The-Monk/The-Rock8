@@ -49,6 +49,32 @@ appliance below runs it.
 | **2:4 structured-sparse fp8** (`2OF4_FP8`, SWMMAC) | RDNA4 2:4 sparse-tensor-core fp8 | Trained-2:4-sparse models (e.g. Sparse-Llama) at fp8 - 5.5 bpw, sparse-tensor-core throughput. |
 | **2:4 structured-sparse fp16** (`2OF4_F16`, SWMMAC) | RDNA4 2:4 sparse f16 A/B | Trained-2:4-sparse models with **no quantization loss** - full-precision values on the sparse tensor cores. |
 
+### Low-bit weight formats
+
+| Feature | What it is | When to use it |
+|---|---|---|
+| **int4 decode** (`k_mmvq_dot8_iu4`) | Block-per-row GEMV on RDNA4's native `v_dot8_i32_iu4` 8-wide int4 dot | The fastest decode path we have: **96-97% of the measured 631 GB/s DRAM roofline**, correctness-gated against a CPU reference. Memory-bound and saturating -- there is no headroom left to take. |
+| **Q2_0 ternary** (`block_q2_0`, 128/block) | 2-bit ternary {-1,0,+1} + fp16 block scale, with a dedicated GEMV | Natively-ternary models (Bonsai). ~2 bpw. Decode is VALU-bound rather than bandwidth-bound at this width. |
+| **Q1_0 binary** (`block_q1_0`, 128/block) | 1-bit {-1,+1} + fp16 block scale | Measured **slower** than Q2_0 on Bonsai-27B (150 vs 164 t/s) -- below ternary the byte saving loses to VALU density. Shipped for completeness; Q2_0 is the better default. |
+| **MXFP6** (E3M2 + UE8M0) | 6-bit OCP microscaling, 4 values per 3 bytes | The one MX width where byte-reduction still buys decode throughput (+17%). |
+
+### Prefill routing
+
+| Feature | What it is | When to use it |
+|---|---|---|
+| **Per-format hipBLASLt routes** | Dedicated prefill paths for Q1_0, Q2_0, Q4_K, Q8_0, F8E4M3, MXFP8, MXFP6, IU4, F16 -- each dequantises to int8 or fp8 and dispatches to Tensile | Large-batch prefill. **All are opt-in and env-gated**, and default to the stock kernel, for the reason below. |
+| **Self-tuning algo cache** | Per-shape algorithm selection, disk-persisted, working around gfx1201's missing cost model | +15.6% pp1024 on Q2_0 once the cache is warm. Novel shapes pay a one-off tuning cost. |
+
+> **Why the routes are opt-in.** The gate keys on the batch dimension M against a scalar threshold, but the win is **shape-dependent**: the same route and threshold gives **+32.7% on an 8B model and -38.2% on a 24B** at overlapping batch sizes. The crossover moves at least 4x with model shape, so a threshold correct for one model is a large regression for another. We would rather ship a conservative default than a fast one that is wrong off-box. Measured in `benchmarks/crossover.sh` of the hackathon repo below.
+
+### Correctness fixes (not performance -- just bugs)
+
+| Fix | What was wrong |
+|---|---|
+| **`GGML_TYPE_Q2_0` validation** | Q2_0 was missing from `ggml_validate_row_data`, which silently broke `llama-quantize --type Q2_0` **and** `--check-tensors` for every Q2_0 GGUF. We audited the rest of the table; Q2_0 was the only gap. |
+| **Weight-cache invalidation** | The hipBLASLt weight cache was not invalidated when a buffer was freed, so a reused allocation could serve stale weights. Each route now registers an invalidator; zero hot-path cost. |
+| **CK 2:4-sparse SWMMAC** | Three bugs in Composable Kernel's gfx1201 sparse path (phantom fill on <2-nonzero groups, `pk_int4_t` byte-vs-nibble OOB, index swap+XOR-1). Error 352 -> 0. Submitted upstream as [ROCm/composable_kernel#3759](https://github.com/ROCm/composable_kernel/pull/3759). |
+
 ### Decode / serving levers
 | Feature | What it is | Use case |
 |---|---|---|
@@ -141,6 +167,42 @@ llama-bench -m Qwen3.6-27B-Quark-F8E4M3.gguf -ngl 999   # sees both R9700s
 ```
 
 ---
+
+## 4b. A local model wrote some of these kernels
+
+The fp8 E4M3 decode kernel shipped in our hackathon submission was **written by
+Qwen-AgentWorld-35B-A3B running on the R9700 itself**, from a written
+specification. It never saw the reference implementation, the inputs, or the
+expected outputs. Graded blind against a golden reference it returned
+`max_rel_err = 0.000000e+00` -- bit-identical across 4096 rows, first attempt --
+and the compiled binary contains 8 emissions of `v_dot4_f32_fp8_fp8`, so the
+hardware instruction really is used.
+
+The same protocol was then run across seven quantisation formats:
+
+| format | verdict | error |
+|---|---|---|
+| Q1_0 (1-bit binary) | REPRODUCED | **0** |
+| Q2_0 (2-bit ternary) | REPRODUCED | 1.08e-06 |
+| Q4_0 (4-bit linear) | REPRODUCED | 1.04e-06 |
+| Q5_0 (5-bit + qh plane) | REPRODUCED | **0** |
+| Q8_0 (8-bit signed) | REPRODUCED | **0** |
+| MXFP4 (E2M1 + UE8M0) | REPRODUCED | 7.31e-07 |
+| **MXFP8** (E4M3 + UE8M0) | **NOT REPRODUCED** | **2.087** |
+
+Six of seven. MXFP8 is left in as a failure because it is the most informative
+row: the model had already written a correct E4M3 kernel and a correct
+UE8M0-scaled kernel, and MXFP8 is exactly those two combined -- capability on the
+parts did not compose into capability on the whole.
+
+Asked to write the *correctness gate* instead of the kernel, it failed outright:
+its harness rejected all five test kernels including the correct one, across
+three rounds. **It does the work well and judges it badly**, which is why every
+result above was graded by a harness that owns the reference rather than by the
+model.
+
+Rig and captured runs: [Hyperloom](https://github.com/The-Monk/rocky-hackathon),
+`kernels/decode/agent_repro/`.
 
 ## 5. Where to get it (every artifact links to the others)
 - **Models:** the *The Rock8 - RDNA4 fp8* collection on Hugging Face (`Quacken-*-FP8`), under

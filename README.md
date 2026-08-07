@@ -438,8 +438,15 @@ portability writeup ([`container/README.md`](container/README.md)).
 # prefill/decode bench
 llama-bench -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -p 512 -n 128
 
-# chat
-llama-cli  -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -p "What do you call a dried grape? Answer in one word."
+# chat -- interactive only. As of b9963 llama-cli is conversation-only:
+# it ignores a -p one-shot, opens a session, and rejects -no-cnv outright
+# ("--no-conversation is not supported by llama-cli"). If you redirect its
+# stdin from /dev/null it will spin on EOF rather than exit.
+llama-cli -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99
+
+# one-shot completion -- this is what you want for scripts and benchmarks
+llama-completion -m Qwen3-8B-Quark-F8E4M3.gguf -ngl 99 -no-cnv -n 128 \
+  -p "What do you call a dried grape? Answer in one word."
 
 # 27B is 2-GPU (tensor-split across two 32 GB cards)
 llama-bench -m Qwen3.6-27B-Quacken-F8E4M3.gguf -ngl 999   # sees both R9700s

@@ -55,7 +55,19 @@ Two hazards for whoever does the staging work:
    `LLAMA_VERSION_ROCM`, that seed stops matching, lemonade downloads **stock**
    binaries, and the image silently stops being The Rock8 while still building
    and running. Pin the SDK, or derive the seed from it.
-2. `HIP_VISIBLE_DEVICES=0` is baked into the image environment. On a host whose
+2. The ROCm version is **not actually pinned**. The Containerfile says
+   "PURE TheRock ROCm 7.13" in a comment and then does `COPY therock/`, so the
+   version is whatever tree the builder happens to have staged. Nothing verifies
+   it. The published image genuinely is 7.13 (`librocm-core` reports `7.13.0`,
+   `libamdhip64.so.7.13.99004-3309c6114a`), but a rebuild against a different
+   staged tree would produce an image that still says `tr713` and isn't. If you
+   stage this context, add a version assertion rather than trusting the comment.
+
+   Note also that the fork is now developed and tested against **ROCm 7.14**
+   (`HIP 7.14.60850`), while the image ships 7.13 — a second axis of skew beyond
+   the build-date one noted in the top-level README.
+
+3. `HIP_VISIBLE_DEVICES=0` is baked into the image environment. On a host whose
    integrated GPU enumerates first, the appliance pins itself to the wrong
    device. Override at run time with `-e HIP_VISIBLE_DEVICES=<n>`.
 

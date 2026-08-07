@@ -82,6 +82,13 @@ This is a **gfx1201 (RDNA4)** image. On RDNA3 or older it will run but the
 RDNA4-specific kernels (fp8 WMMA, int4 dot, 2:4 sparse) do not exist on that
 silicon and will not be used.
 
+> **How to read the numbers in this document.** Figures carrying a model name and
+> a unit were measured on 2x Radeon AI PRO R9700 (gfx1201). Where a reproduction
+> command exists it is given; where one does not, treat the figure as a recorded
+> result from our own runs rather than something you can re-derive from this repo.
+> The container table (section 4) and the perplexity column are the two you can
+> reproduce directly. `INT6 2.46x` is explicitly a byte ratio, not a measurement.
+
 ## 1. Shipped features - what they do and when to use them
 
 ### Precision / matrix kernels
@@ -140,7 +147,7 @@ mis-scale every MX tensor it touches.
 |---|---|---|
 | **int4 decode** (`k_mmvq_dot8_iu4`) | Block-per-row GEMV on RDNA4's native `v_dot8_i32_iu4` 8-wide int4 dot | The fastest decode path we have: **96-97% of the measured 631 GB/s DRAM roofline**, correctness-gated against a CPU reference. Memory-bound and saturating -- there is no headroom left to take. |
 | **Q2_0 ternary** (`block_q2_0`, 128/block) | 2-bit ternary {-1,0,+1} + fp16 block scale, with a dedicated GEMV | Natively-ternary models (Bonsai). ~2 bpw. Decode is VALU-bound rather than bandwidth-bound at this width. |
-| **Q1_0 binary** (`block_q1_0`, 128/block) | 1-bit {-1,+1} + fp16 block scale | Measured **slower** than Q2_0 on Bonsai-27B (150 vs 164 t/s) -- below ternary the byte saving loses to VALU density. Shipped for completeness; Q2_0 is the better default. |
+| **Q1_0 binary** (`block_q1_0`, 128/block) | 1-bit {-1,+1} + fp16 block scale | Measured **slower** than Q2_0 on Bonsai-**8B** (150 vs 164 t/s) -- below ternary the byte saving loses to VALU density. (Bonsai-**27B** Q2_0 measures 51 t/s; the 164 figure is the 8B and does not transfer.) Shipped for completeness; Q2_0 is the better default. |
 | **MXFP6** (E3M2 + UE8M0) | 6-bit OCP microscaling, 4 values per 3 bytes | The one MX width where byte-reduction still buys decode throughput (+17%). |
 
 ### Prefill routing
@@ -246,12 +253,12 @@ below is representative, not exhaustive — others exist (`mul_mat_q2_0_wmma.cu`
 ### Decode / serving levers
 | Feature | What it is | Use case |
 |---|---|---|
-| **MTP self-speculative decode** (`--spec-type draft-mtp`) | Uses the model's own next-token (MTP) head as the draft | Single-GPU interactive latency - decode **95 t/s > Vulkan 91** on Qwen3.6-27B. The single-GPU champion. |
+| **MTP self-speculative decode** (`--spec-type draft-mtp`) | Uses the model's own next-token (MTP) head as the draft | Single-GPU interactive latency. On the **35B-A3B MoE** decode reaches **95 t/s vs Vulkan's 91** -- the only configuration where we beat Vulkan on decode. On the **27B dense** MTP takes it from **18 to 45 t/s**, which is a much larger relative gain but still below Vulkan's 19.93 on that model (our 19.05 raw is the one hold-out where Vulkan leads). Do not conflate the two: 95>91 is the A3B. |
 | **DFlash spec-decode** (`--draft-dflash`) | Q8/fp8 DFlash drafter + fp8 target | 1-GPU 52 t/s while leaving the 2nd GPU free for an agent fleet. |
-| **Async spec-decode pipeline** (`LLAMA_SPEC_ASYNC=2`) | Draft-gen ‖ verify on **separate GPUs** (disjoint compute); needs a draft model + 2 cards | **A 2-GPU RDNA4 box serving one latency-critical stream** — a local coding assistant, an interactive chat, or an agent loop where you want the highest tokens/sec and have both cards. The draft model sits on GPU1 generating candidates *while* GPU0 verifies the previous batch, so neither card idles → **+75% decode vs running them serially**. Single-GPU is a wash (the two saturating kernels time-share one card), so this is specifically a *dual-card* lever; auto-enable when 2 GPUs + a draft are detected is on the roadmap. |
+| **Async spec-decode pipeline** (`LLAMA_SPEC_ASYNC=2`) | Draft-gen ‖ verify on **separate GPUs** (disjoint compute); needs a draft model + 2 cards | **A 2-GPU RDNA4 box serving one latency-critical stream** — a local coding assistant, an interactive chat, or an agent loop where you want the highest tokens/sec and have both cards. The draft model sits on GPU1 generating candidates *while* GPU0 verifies the previous batch, so neither card idles → **+75% decode vs running them serially**. Single-GPU is a wash (the two saturating kernels time-share one card), so this is specifically a *dual-card* lever; auto-enable when 2 GPUs + a draft are detected is on the roadmap. **Availability caveat:** `LLAMA_SPEC_ASYNC` is read only by the `speculative-simple` example binary, not by `llama-server` or the Lemonade path -- setting it on a server does nothing today. |
 | **Activation quant dedup + verify-dedup** (`GGML_HIP_DEDUP_MMVQ_QUANT`) | Sibling matmuls reading the same activation tensor share one `quantize_row_q8_1` launch instead of recomputing byte-identical output; `_BATCH` extends it across the speculative-decode verify pass | Takes Q2_0 MTP decode from a raw ~51 t/s to **67.18 t/s = 87% of the 76.9 t/s roofline for that model**. Lossless, verified across Q2_0/Q4_0/Q4_K/Q5_K/Q6_K/Q8_0/F8E4M3/IU4. **Opt-in, default OFF** — you must set the env var to get this. |
 | **Register-spill fixes** | fattn-vec fp8-KV (hd128/256, ncols=2) -> 0 spill; mmq fp8/bf8/mxfp8 48-tile -> 0 spill | Removes VGPR spills in fp8-KV + spec-decode/batched-verify, and in specific prefill batch widths (+17.8% on the 48-tile). Automatic - no flag. |
-| **Continuous batching -- multi-user serving** (`--cont-batching`, default) | Merges concurrent decode steps: one weight read advances **N** sequences (the amortization that makes serving fast) | **Serve a handful of concurrent users/agents off one card -- the vLLM replacement on RDNA4.** Aggregate throughput scales **4.06x at npl=8** on the 35B-A3B fp8 MoE, realizing the same batching amortization that was vLLM's "server win" -- but *natively* and *with fp8* (vLLM silently dequants fp8 on gfx1201, so its win evaporates here). vLLM's KV-memory edge is **already halved on The Rock8 by fp8 KV-cache** (`-ctk/-ctv f8e4m3` -> ~2x the sequences/GB, on top of the fp8 weights) -- the only remaining piece is PagedAttention's fragmentation-free *paging*, which is landing in llama.cpp (#21961). |
+| **Continuous batching -- multi-user serving** (`--cont-batching`, default) | Merges concurrent decode steps: one weight read advances **N** sequences (the amortization that makes serving fast) | **Serve a handful of concurrent users/agents off one card -- the vLLM replacement on RDNA4.** Aggregate throughput on the 35B-A3B fp8 MoE scales **65 -> 537 t/s (8.2x), peaking at npl~114**, then knees as the MoE's routed-expert union saturates. `npl=8` is an early rung at 4.06x, not the ceiling. There is a reproducible ~+-11% batch-tiling alignment effect: **set `--parallel` to a value that is 2 mod 4** (110/114/118 give 531-537 t/s; 112/116 give 451-490). realizing the same batching amortization that was vLLM's "server win" -- but *natively* and *with fp8* (vLLM silently dequants fp8 on gfx1201, so its win evaporates here). vLLM's KV-memory edge is **already halved on The Rock8 by fp8 KV-cache** (`-ctk/-ctv f8e4m3` -> ~2x the sequences/GB, on top of the fp8 weights) -- **but note fp8-KV is INCOMPATIBLE with batched decode on this hybrid-SSM MoE (breaks B>1); batching runs f16-KV only, and fp8-KV stays a single-stream lever** -- the only remaining piece is PagedAttention's fragmentation-free *paging*, which is landing in llama.cpp (#21961). |
 
 ### Operations
 | Feature | What it is | Use case |

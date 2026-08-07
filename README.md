@@ -14,27 +14,32 @@ yet usable, we say so plainly and explain what would unblock it.
 
 ---
 
-## The Rock8 - RDNA4 fp8 models (Hugging Face)
+## What this is
 
-Native fp8 E4M3 GGUFs, each Quark-quantized from full-precision BF16 and
-validated on gfx1201 (load + bench + PPL + coherence). Grab any one and the
-appliance below runs it.
+The Rock8 is the **inference backend** for AMD RDNA4 (gfx1201): a fork of
+llama.cpp with native low-precision matrix kernels for that silicon, plus a
+one-command container so you do not have to build ROCm yourself.
 
-| Model | Source (license) | Params | GGUF | PPL | pp512 (t/s) | tg128 (t/s) |
-|---|---|---|---:|---:|---:|---:|
-| [**Quacken-8B-FP8**](https://huggingface.co/Gorilla4X/Quacken-8B-FP8) | [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) (Apache-2.0) | 8B | 9.2 GB | 10.93 | 4688 | 58.0 |
-| [**Quacken-R1-14B-FP8**](https://huggingface.co/Gorilla4X/Quacken-R1-14B-FP8) | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B) (MIT) | 14B | 16 GB | 8.97 | 2499 | 33.4 |
-| [**Quacken-27B-FP8**](https://huggingface.co/Gorilla4X/Quacken-27B-FP8) | Qwen3.6-27B (Apache-2.0) | 27B | 29 GB | 7.14 | 1251 | 18.52 |
-| [**Quacken-35B-A3B-FP8**](https://huggingface.co/Gorilla4X/Quacken-35B-A3B-FP8) | Qwen3.6-35B-A3B MoE (Apache-2.0) | 35B-A3B | 38.7 GB | 6.63 | -- | -- |
-| [**Quacken-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quacken-Ornith-35B-FP8) | Ornith-1.0-35B (Apache-2.0) | 35B | 37.8 GB | 6.70 | -- | -- |
+It is not a model catalogue, but the models are one command away —
+`./fetch-model.sh` resolves the real filename from the Hugging Face API and
+downloads it (the filenames are not uniform across those repos, so a hardcoded
+`curl` breaks). Models live on Hugging Face — the
+[**The Rock8 · RDNA4 fp8** collection](https://huggingface.co/collections/Gorilla4X/the-rock8-rdna4-fp8-6a547070f667cb41db0bc2ed)
+holds fp8 GGUFs quantised from BF16 and validated on gfx1201, each with its own
+model card carrying its source model, license and measurements. Any fp8, MX,
+int4 or Q-format GGUF this backend understands will run; see the format table in
+§1.
 
-- **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/collections/Gorilla4X/the-rock8-rdna4-fp8-6a547070f667cb41db0bc2ed) (all models, one place).
-- **All 5 published.** Each Quark-quantized from full-precision BF16, validated on gfx1201.
+The kernel source is vendored here as a submodule:
 
-> PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on
-> gfx1201 (R9700); the 27B decode figure is 2-GPU (tensor-split).
+```bash
+git clone --recursive https://github.com/The-Monk/The-Rock8
+#   llama.cpp/   -> The-Monk/llama.cpp, branch roc8
+```
 
----
+Upstream is [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT,
+© the ggml authors). Nothing here is upstreamed and it carries no endorsement
+from the llama.cpp maintainers.
 
 ## 0. Get an RDNA4 card working — start here
 
@@ -54,15 +59,16 @@ sudo apt install -y podman crun
 # 3. pull  (~2.4 GB download, ~10 GB on disk once unpacked)
 podman pull ghcr.io/the-monk/the-rock8:rdna4-tr713
 
-# 4. get a model (any fp8 GGUF from the table below)
-mkdir -p ~/models && cd ~/models
-curl -LO https://huggingface.co/Gorilla4X/Quacken-8B-FP8/resolve/main/Qwen3-8B-Quark-F8E4M3.gguf
+# 4. get a model
+git clone https://github.com/The-Monk/The-Rock8 && cd The-Rock8
+./fetch-model.sh            # lists what is available
+./fetch-model.sh 8b         # ~9 GB, downloads into ./models
 
 # 5. run a benchmark to confirm the card is actually being used
 podman run --rm --runtime crun \
   --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
-  -v ~/models:/models:ro \
+  -v "$PWD/models":/models:ro \
   ghcr.io/the-monk/the-rock8:rdna4-tr713 bench
 ```
 

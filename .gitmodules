@@ -1,0 +1,4 @@
+[submodule "llama.cpp"]
+	path = llama.cpp
+	url = https://github.com/The-Monk/llama.cpp
+	branch = roc8

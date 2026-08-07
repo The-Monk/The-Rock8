@@ -57,13 +57,13 @@ aspirations.
 
 | Format | Block | Scale | Leaf encoding |
 |---|---|---|---|
-| **Q1_0** | 128 elem / 16 B | fp16 per block | 1 bit, {-1,+1} |
-| **Q2_0** | 128 elem / 32 B | fp16 per block | 2 bit ternary, {-1,0,+1} |
-| **Q4_0** | 32 elem / 16 B | fp16 per block | 4 bit unsigned, value = n-8 |
-| **Q5_0** | 32 elem / 20 B | fp16 per block | 4 bit + a 5th bit-plane in `qh`, value = n-16 |
-| **Q8_0** | 32 elem / 32 B | fp16 per block | signed int8 |
+| **Q1_0** | 128 elem / **18 B** | fp16 per block | 1 bit, {-1,+1} |
+| **Q2_0** | 128 elem / **34 B** | fp16 per block | 2 bit ternary, {-1,0,+1} |
+| **Q4_0** | 32 elem / **18 B** | fp16 per block | 4 bit unsigned, value = n-8 |
+| **Q5_0** | 32 elem / **22 B** | fp16 per block | 4 bit + a 5th bit-plane in `qh`, value = n-16 |
+| **Q8_0** | 32 elem / **34 B** | fp16 per block | signed int8 |
 | **Q2_K … Q6_K** | 256-elem superblocks | multi-level | upstream ggml K-quants, unmodified |
-| **IU4** | packed uniform int4 | — | native `v_wmma_i32_16x16x32_iu4` W4A4; dormant, see §2 |
+| **IU4** | 32 elem / **18 B** | **fp16 per block** | packed uniform int4; native `v_wmma_i32_16x16x32_iu4` W4A4; dormant, see §2 |
 | **F8E4M3** | 32 elem / 34 B | fp16 per block | OCP e4m3fn — 4 exp / 3 mantissa, bias 7 |
 | **F8E5M2** | 32 elem / 34 B | fp16 per block | OCP bf8 — 5 exp / 2 mantissa, real ±Inf and NaN |
 | **MXFP4** | 32 elem / 17 B | **UE8M0**, 2^(e-127) | OCP E2M1 — 2 exp / 1 mantissa, nibble-packed |
@@ -71,6 +71,11 @@ aspirations.
 | **MXFP8** | 32 elem / 33 B | **UE8M0**, 2^(e-127) | OCP e4m3fn, same leaf as F8E4M3 |
 | **NVFP4** | 64 elem / 36 B | **UE4M3 ×4**, one per 16 | E2M1 leaf with finer-grained sub-block scales |
 | **2:4-sparse fp8 / fp16** | SWMMAC fragments | — | structured sparsity on the sparse tensor cores |
+
+Every byte size above is the **whole block including its scale** — the figure the
+`static_assert`s in `ggml-common.h` enforce. An earlier revision of this table
+listed payload-only sizes for the Q-formats, which is a two-byte-per-block error
+that compounds across a whole tensor.
 
 Three scale conventions appear above and they are not interchangeable: a
 continuous **fp16** delta (the Q-series and F8E*), a shared power-of-two
@@ -103,8 +108,9 @@ mis-scale every MX tensor it touches.
 
 ### The prefill routes, and how to drive them
 
-Nine per-format hipBLASLt routes. Each dequantises the weight to int8 or fp8 and
-dispatches to Tensile, and each is **off by default** -- see the shape-dependence
+Nine per-format hipBLASLt routes. Eight of them dequantise the weight to int8 or
+fp8 and dispatch to Tensile; F16 is the exception and is discussed below. All are
+**off by default** -- see the shape-dependence
 note below for why. Every route exposes the same six knobs:
 
 | env var | effect |
@@ -116,7 +122,13 @@ note below for why. Every route exposes the same six knobs:
 | `GGML_HIP_<FMT>_HIPBLASLT_NOTUNE=1` | skip tuning; use the heuristic pick |
 | `GGML_HIP_<FMT>_HIPBLASLT_WCACHE_MB=<n>` | cap the dequantised-weight cache |
 
-`<FMT>` is one of **`Q1_0` `Q2_0` `Q4_K` `Q8_0` `F8E4M3` `MXFP6` `MXFP8` `IU4` `F16`**.
+`<FMT>` is one of **`Q1_0` `Q2_0` `Q4_K` `Q8_0` `F8E4M3` `MXFP6` `MXFP8` `IU4`**
+— those eight expose all six knobs. **`F16` exposes only four**: `PREFILL`,
+`MTHRESH`, `NOTUNE`, `TUNE_CACHE`. It has no `_FP8` (there is no intermediate
+format to choose) and no `_WCACHE_MB` (there is no dequantised weight to cache);
+setting `GGML_HIP_F16_HIPBLASLT_WCACHE_MB` does nothing, because no such variable
+exists in the source.
+
 Global escape hatch: `GGML_HIP_NO_HIPBLASLT=1` disables all of them.
 
 The self-tuning cache exists because gfx1201 has no hipBLASLt cost model -- the
@@ -127,9 +139,18 @@ stores the *index*, not the algorithm blob; restoring a blob segfaults.
 > route earns its win by *owning the dequantisation* -- it decides how the weights
 > reach the tensor cores (int8 or fp8, which is what the `_FP8` knob selects), and
 > that choice is the mechanism. **F16 has no dequantisation to own.** The weights
-> are already in a format the tensor cores consume directly, so our route and the
-> stock `hipblasGemmEx` path converge on the same Tensile kernels; ours simply adds
-> plan-cache and tuning overhead on top.
+> are already in a format the tensor cores consume directly, so our route has no
+> lever the stock path lacks; it simply adds plan-cache and tuning overhead on top.
+>
+> To be precise about what is and is not established here: the two paths do **not**
+> provably land in the same kernel. The baseline goes `hipblasGemmEx` → rocBLAS →
+> Tensile, while our route goes hipBLASLt → TensileLite. Both are Tensile-*generated*
+> libraries, but they are distinct libraries with distinct kernel sets and
+> heuristics, and nothing in the source demonstrates they select the same one. The
+> claim we stand behind is the narrower one: **there is no dequantisation decision
+> for this route to make**, so there is no mechanism by which it could beat a
+> well-tuned fp16 GEMM. Why it measured *slower* rather than equal is unexplained,
+> and would need profiling rather than reading to settle.
 >
 > A better weight converter cannot recover this. We checked the obvious
 > candidate -- our route casts F32 activations to F16 with its own kernel -- but
@@ -142,7 +163,7 @@ stores the *index*, not the algorithm blob; restoring a blob segfaults.
 
 | env var | what it does |
 |---|---|
-| `GGML_HIP_DEDUP_MMVQ_QUANT=1` | share identical weight reads across a decode step (also `_BATCH`, `_FP8`) |
+| `GGML_HIP_DEDUP_MMVQ_QUANT=1` | skip redundant **activation** `quantize_row_q8_1` launches across sibling matmuls that read the same input tensor (wq/wk/wv, ffn_gate/ffn_up, …). Weights are not involved. `_BATCH` widens it to the spec-decode verify pass and **requires this flag too**; `_FP8` covers the fp8 path |
 | `GGML_HIP_IU4_MMQ=1` | int4 MMQ path |
 | `GGML_HIP_F16_DOT2_DECODE=1` | `v_dot2_f32_f16` decode -- measured a **loss** single-issue; kept for reproducibility |
 | `GGML_HIP_F8E5M2_DOT4=1` | bf8 decode dot |
@@ -157,7 +178,9 @@ driven.
 
 ### What is actually in the fork
 
-32 kernel sources that upstream llama.cpp does not have:
+Fork-specific kernel sources upstream llama.cpp does not have. The grouped list
+below is representative, not exhaustive — others exist (`mul_mat_q2_0_wmma.cu`,
+`mul_mat_q2_0_fp8route_mmq.cu`, `int4_24_probe.cu`, `allreduce.cu` among them):
 
 - **decode** -- `mmvq_iu4.cu`, `mmvq_dot2f16.cu`, `mul_mat_q2_0_gemv.cu`, `mul_mat_iu4_gemv.cu`
 - **prefill routes** -- `mul_mat_{q1_0,q2_0,q4_K,q8_0,f8e4m3,mxfp6,mxfp8,iu4,f16}_hipblaslt.cu`
@@ -180,7 +203,7 @@ driven.
 | **MTP self-speculative decode** (`--spec-type draft-mtp`) | Uses the model's own next-token (MTP) head as the draft | Single-GPU interactive latency - decode **95 t/s > Vulkan 91** on Qwen3.6-27B. The single-GPU champion. |
 | **DFlash spec-decode** (`--draft-dflash`) | Q8/fp8 DFlash drafter + fp8 target | 1-GPU 52 t/s while leaving the 2nd GPU free for an agent fleet. |
 | **Async spec-decode pipeline** (`LLAMA_SPEC_ASYNC=2`) | Draft-gen ‖ verify on **separate GPUs** (disjoint compute); needs a draft model + 2 cards | **A 2-GPU RDNA4 box serving one latency-critical stream** — a local coding assistant, an interactive chat, or an agent loop where you want the highest tokens/sec and have both cards. The draft model sits on GPU1 generating candidates *while* GPU0 verifies the previous batch, so neither card idles → **+75% decode vs running them serially**. Single-GPU is a wash (the two saturating kernels time-share one card), so this is specifically a *dual-card* lever; auto-enable when 2 GPUs + a draft are detected is on the roadmap. |
-| **Weight dedup + verify-dedup** | Identical weight reads across a decode step are issued once and shared, including across the speculative-decode verify batch | Takes Q2_0 MTP decode from a raw ~51 t/s to **67.18 t/s = 87% of the 76.9 t/s roofline for that model**. Lossless, verified across Q2_0/Q4_0/Q4_K/Q5_K/Q6_K/Q8_0/F8E4M3/IU4. Automatic. |
+| **Activation quant dedup + verify-dedup** (`GGML_HIP_DEDUP_MMVQ_QUANT`) | Sibling matmuls reading the same activation tensor share one `quantize_row_q8_1` launch instead of recomputing byte-identical output; `_BATCH` extends it across the speculative-decode verify pass | Takes Q2_0 MTP decode from a raw ~51 t/s to **67.18 t/s = 87% of the 76.9 t/s roofline for that model**. Lossless, verified across Q2_0/Q4_0/Q4_K/Q5_K/Q6_K/Q8_0/F8E4M3/IU4. **Opt-in, default OFF** — you must set the env var to get this. |
 | **Register-spill fixes** | fattn-vec fp8-KV (hd128/256, ncols=2) -> 0 spill; mmq fp8/bf8/mxfp8 48-tile -> 0 spill | Removes VGPR spills in fp8-KV + spec-decode/batched-verify, and in specific prefill batch widths (+17.8% on the 48-tile). Automatic - no flag. |
 | **Continuous batching -- multi-user serving** (`--cont-batching`, default) | Merges concurrent decode steps: one weight read advances **N** sequences (the amortization that makes serving fast) | **Serve a handful of concurrent users/agents off one card -- the vLLM replacement on RDNA4.** Aggregate throughput scales **4.06x at npl=8** on the 35B-A3B fp8 MoE, realizing the same batching amortization that was vLLM's "server win" -- but *natively* and *with fp8* (vLLM silently dequants fp8 on gfx1201, so its win evaporates here). vLLM's KV-memory edge is **already halved on The Rock8 by fp8 KV-cache** (`-ctk/-ctv f8e4m3` -> ~2x the sequences/GB, on top of the fp8 weights) -- the only remaining piece is PagedAttention's fragmentation-free *paging*, which is landing in llama.cpp (#21961). |
 

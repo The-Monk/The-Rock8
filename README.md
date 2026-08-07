@@ -60,7 +60,7 @@ sudo apt install -y podman crun
 podman pull ghcr.io/the-monk/the-rock8:rdna4-tr713
 
 # 4. get a model
-git clone https://github.com/The-Monk/The-Rock8 && cd The-Rock8
+git clone --recursive https://github.com/The-Monk/The-Rock8 && cd The-Rock8
 ./fetch-model.sh            # lists what is available
 ./fetch-model.sh 8b         # ~9 GB, downloads into ./models
 

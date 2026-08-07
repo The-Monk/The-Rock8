@@ -270,6 +270,55 @@ below is representative, not exhaustive — others exist (`mul_mat_q2_0_wmma.cu`
 - **int4 W4A4** -- `iu4_w4a4.cu`, `mul_mat_iu4{,_mmq,_ck_wmma}.cu`
 - **infrastructure** -- `hipblaslt_wcache.cu` (weight-cache invalidation), `quantize_fp8_sr.cu` (stochastic rounding), `mxfp8_selftest.cu`, `dot2_bf16_probe.cu`
 
+### Profiling on RDNA4 — what works, and what silently lies
+
+**Counter-based profiling is broken on gfx1201, and it fails silently.** There is
+no `gfx12` section in rocprofiler-sdk's `basic_counters.xml` or
+`derived_counters.xml` — verified against `ROCm/rocm-systems` `develop`, which is
+byte-identical to what ships in ROCm 7.14. The nearest definitions are gfx11's,
+and their event IDs do not carry over. Measured on this card, same run:
+
+    GL2C_EA_RDREQ_sum         116,988,173     works
+    GL2C_EA_RDREQ_32B_sum               0     dead
+    GL2C_EA_RDREQ_64B_sum               0     dead
+    FETCH_SIZE                          0     derived from the dead buckets
+
+`FETCH_SIZE` is `(GL2C_EA_RDREQ_32B_sum*32 + _64B*64 + _96B*96 + _128B*128)/1024`,
+so it evaluates to zero and reports that as a measurement. Every derived metric in
+gfx11's block — 23 of them, including `WRITE_SIZE`, `GPU_UTIL`, `L2CacheHit`,
+`VALUUtilization` — is affected the same way.
+
+Setting the GPU performance level to `STABLE_STD` is **necessary but not
+sufficient**: it wakes `GRBM_COUNT`, `SQ_INSTS_VALU` and the GL2C aggregate, and
+does nothing for the size buckets. The upstream issue for the zero counters was
+closed by a documentation-only PR covering the perf level, which does not address
+this.
+
+**PC sampling, however, works — and is worth reaching for instead.** It is gated
+behind an environment variable that is not mentioned in the error you get without
+it:
+
+```bash
+ROCPROFILER_PC_SAMPLING_BETA_ENABLED=ON rocprofv3 \
+  --pc-sampling-method host_trap --pc-sampling-unit time \
+  --pc-sampling-interval 1000 --output-format csv -d out -- ./your_binary
+```
+
+That yields per-instruction attribution with disassembly. On our fp8 decode
+kernel, 4,539 samples:
+
+    61.3%  v_dot4_f32_fp8_fp8      the hardware fp8 dot
+     9.5%  global_load_b128        vectorised loads
+     2.4%  s_barrier_wait          the LDS reduction
+
+which is the kind of answer the counters were supposed to give. The hardware
+behind it is documented in the RDNA4 ISA (`PERF_SNAPSHOT_DATA/1/2`,
+`PERF_SNAPSHOT_PC_LO/HI`, readable via `S_GETREG_B32`), alongside a free-running
+64-bit `SHADER_CYCLES_LO/HI` you can read in-shader for self-timing.
+
+**Rule of thumb on this silicon: trust PC sampling, distrust derived counters, and
+treat a counter reading exactly zero as "unsupported" rather than as data.**
+
 ### Correctness fixes (not performance -- just bugs)
 
 | Fix | What was wrong |

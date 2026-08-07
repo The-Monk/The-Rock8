@@ -5,7 +5,7 @@ IMG=roc8-lemonade:tr713
 MODELS=${MODELS:?set MODELS to the directory holding your GGUFs}
 PORT=13405   # host port (avoid clashing with any host lemond on 13305)
 NAME=roc8lem
-SC=/tmp/claude-1000/-home-jmonk/5f7e73a6-0432-4b0d-b7aa-bae8db6133e2/scratchpad
+SC=${SCRATCH:-./scratch}
 
 podman rm -f $NAME >/dev/null 2>&1
 

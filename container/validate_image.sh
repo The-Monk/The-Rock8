@@ -3,7 +3,7 @@
 set -uo pipefail
 IMG=roc8-lemonade:tr713
 MODELS=${MODELS:?set MODELS to the directory holding your GGUFs}
-SC=/tmp/claude-1000/-home-jmonk/5f7e73a6-0432-4b0d-b7aa-bae8db6133e2/scratchpad
+SC=${SCRATCH:-./scratch}
 RUN="podman run --rm --runtime crun --device /dev/kfd --device /dev/dri --group-add keep-groups --security-opt seccomp=unconfined -v $MODELS:/models:ro"
 
 echo "########## A) ldd closure from built image (zero /opt/rocm) ##########"

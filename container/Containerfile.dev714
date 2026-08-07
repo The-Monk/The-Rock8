@@ -73,6 +73,33 @@ RUN /opt/venv/bin/pip install --no-cache-dir \
          "git+https://github.com/AMD-AGI/TraceLens.git" \
          "lemonade-sdk"
 
+# Wire lemonade's rocm slot to OUR binaries. The version marker is read from the
+# installed package rather than hardcoded -- a stale literal makes lemonade fetch
+# stock binaries silently, and the image stops being The Rock8 while still
+# building and running. The verification below turns that into a build failure.
+RUN set -eux; \
+    SLOT="$(/opt/venv/bin/python -c 'import sys;print(sys.prefix)')/rocm/llama_server/build/bin"; \
+    ROOT="$(dirname "$(dirname "$SLOT")")"; \
+    mkdir -p "$SLOT"; \
+    for f in /opt/llama/*; do ln -sf "$f" "$SLOT/$(basename "$f")"; done; \
+    VER="$(/opt/venv/bin/python -c "
+import re,pathlib,sys
+for base in sys.path:
+    b=pathlib.Path(base)
+    if not b.is_dir(): continue
+    for f in b.rglob('*.py'):
+        if 'lemonade' not in str(f): continue
+        try: m=re.search(r'LLAMA_VERSION_ROCM\\s*=\\s*[\"\']([^\"\']+)', f.read_text(errors='ignore'))
+        except Exception: continue
+        if m: print(m.group(1)); raise SystemExit
+raise SystemExit('FATAL: LLAMA_VERSION_ROCM not found in installed lemonade')
+")"; \
+    echo "lemonade expects: $VER"; \
+    printf '%s' "$VER" > "$ROOT/version.txt"; \
+    printf 'rocm'      > "$ROOT/backend.txt"; \
+    readlink -f "$SLOT/llama-server" | grep -q '^/opt/llama/' \
+      || { echo "FATAL: slot resolves outside /opt/llama"; exit 1; }
+
 # ---- deliberately NOT included ----------------------------------------------
 # AITER: gfx1201 is absent from its architecture table, and that gap is precisely
 #   what makes vLLM and SGLang silently dequantise fp8 to fp32 on this card. It

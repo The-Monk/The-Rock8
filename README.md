@@ -316,6 +316,24 @@ behind it is documented in the RDNA4 ISA (`PERF_SNAPSHOT_DATA/1/2`,
 `PERF_SNAPSHOT_PC_LO/HI`, readable via `S_GETREG_B32`), alongside a free-running
 64-bit `SHADER_CYCLES_LO/HI` you can read in-shader for self-timing.
 
+**We root-caused it.** RDNA4 issues EA read requests at a fixed **256 B**, so the
+32/64/96/128 B buckets gfx11's `FETCH_SIZE` is built from do not exist here.
+Measured against known streaming reads at 64/128/256/512 MiB: exactly
+**256.0 bytes/request** at every point, no drift over an 8x range. The correct
+gfx12 expression is therefore:
+
+    FETCH_SIZE = (GL2C_EA_RDREQ_sum * 256) / 1024
+
+which returns 262,147 KB for a known 256.0 MiB read, against rocprofv3's `0` on
+the identical run.
+
+`toolkit/rdna4-memprof.sh` in the
+[Hyperloom repo](https://github.com/The-Monk/rocky-hackathon) implements this: it
+sets and restores the perf level, reads the aggregate counter that works, applies
+the measured constant, and carries `GRBM_COUNT` alongside so a zero cannot be
+mistaken for a measurement. The reproducer, the four-point calibration and a
+filable issue draft are in `toolkit/rdna4-fetchsize-repro/`.
+
 **Rule of thumb on this silicon: trust PC sampling, distrust derived counters, and
 treat a counter reading exactly zero as "unsupported" rather than as data.**
 

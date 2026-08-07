@@ -341,7 +341,7 @@ treat a counter reading exactly zero as "unsupported" rather than as data.**
 
 | Fix | What was wrong |
 |---|---|
-| **`GGML_TYPE_Q2_0` validation** | Q2_0 was missing from `ggml_validate_row_data`, which silently broke `llama-quantize --type Q2_0` **and** `--check-tensors` for every Q2_0 GGUF. We audited the rest of the table; Q2_0 was the only gap. |
+| **`GGML_TYPE_Q2_0` validation** | Q2_0 was missing from `ggml_validate_row_data` **in this fork**, which broke `llama-quantize --type Q2_0` and `--check-tensors` for Q2_0 GGUFs built against it. Fixed 2026-07-26. **Correction:** an earlier revision of this file described it as an upstream bug affecting every Q2_0 GGUF. It is not — `ggml-org/llama.cpp` master handles Q2_0 in that function today, so this was our own regression, not a defect we found in upstream. |
 | **Weight-cache invalidation** | The hipBLASLt weight cache was not invalidated when a buffer was freed, so a reused allocation could serve stale weights. Each route now registers an invalidator; zero hot-path cost. |
 | **CK 2:4-sparse SWMMAC** | Three bugs in Composable Kernel's gfx1201 sparse path (phantom fill on <2-nonzero groups, `pk_int4_t` byte-vs-nibble OOB, index swap+XOR-1). Error 352 -> 0. Submitted upstream as [ROCm/composable_kernel#3759](https://github.com/ROCm/composable_kernel/pull/3759). |
 

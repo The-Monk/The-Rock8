@@ -123,8 +123,20 @@ The self-tuning cache exists because gfx1201 has no hipBLASLt cost model -- the
 heuristic mis-picks badly (163 vs 318 TOP/s on an ffn-down shape). The cache
 stores the *index*, not the algorithm blob; restoring a blob segfaults.
 
-> **F16 is disabled deliberately.** It is a net regression at production shapes
-> and stays off; the flag exists for measurement, not for use.
+> **F16 is disabled deliberately, and it is not a bug to be fixed.** Every other
+> route earns its win by *owning the dequantisation* -- it decides how the weights
+> reach the tensor cores (int8 or fp8, which is what the `_FP8` knob selects), and
+> that choice is the mechanism. **F16 has no dequantisation to own.** The weights
+> are already in a format the tensor cores consume directly, so our route and the
+> stock `hipblasGemmEx` path converge on the same Tensile kernels; ours simply adds
+> plan-cache and tuning overhead on top.
+>
+> A better weight converter cannot recover this. We checked the obvious
+> candidate -- our route casts F32 activations to F16 with its own kernel -- but
+> the baseline does exactly the same thing (`src1_as_f16` / `to_fp16_cuda` in
+> `ggml-cuda.cu`), so the cast is a wash, not an overhead we are paying alone.
+> The absent `_FP8` knob on this route is the tell: there is no intermediate
+> format decision to make. The flag exists for measurement, not for use.
 
 ### Decode-side levers
 

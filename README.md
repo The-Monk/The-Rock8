@@ -111,6 +111,12 @@ kernels"; that was wrong.
 > documented below. A rebuilt image is needed to close this, and until then this
 > note is the honest statement of what you get.
 
+> **Pull, don't build.** The `Containerfile` needs two large staged directories
+> (a TheRock ROCm tree and the built `roc8` binaries) that are gitignored and not
+> published, so you **cannot currently rebuild this image from this repository**.
+> `container/README.md` explains what would be required. The image on ghcr is the
+> supported path.
+
 ## 1. Shipped features - what they do and when to use them
 
 ### Precision / matrix kernels

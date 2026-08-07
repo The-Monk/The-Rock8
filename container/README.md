@@ -29,6 +29,36 @@ Rootless Podman here defaulted to **runc**, which silently ignores `--group-add 
 > Set `MODELS` to wherever your GGUFs live, e.g.
 > `export MODELS=/path/to/models/qwen3-8b-fp8`
 
+> The `ppl` subcommand needs a wikitext directory mounted at `/wiki`; it is a
+> required `-v`, not an aside:
+> `-v "$WIKITEXT:/wiki:ro"` where `$WIKITEXT` holds `wiki.test.raw`.
+
+## Rebuilding this image — read first
+
+**You cannot rebuild this image from the public repository today.** The
+`Containerfile` copies two directories that are deliberately gitignored because
+of their size:
+
+- `therock/` — an AMD TheRock ROCm 7.13 runtime tree for gfx1201 (~2.7 GB)
+- `llama/`   — binaries built from `llama.cpp` branch `roc8` (~80 MB)
+
+Neither is published, and there are no instructions here for producing them.
+Staging them is on the list; until it lands, `podman pull` is the only supported
+path and this section exists so you find that out here rather than after a failed
+build.
+
+Two hazards for whoever does the staging work:
+
+1. `Containerfile` installs `lemonade-sdk` **unpinned**, then pre-seeds
+   `version.txt` with the literal `b1066` so lemonade skips downloading its own
+   llama.cpp binaries. If a newer lemonade-sdk expects a different
+   `LLAMA_VERSION_ROCM`, that seed stops matching, lemonade downloads **stock**
+   binaries, and the image silently stops being The Rock8 while still building
+   and running. Pin the SDK, or derive the seed from it.
+2. `HIP_VISIBLE_DEVICES=0` is baked into the image environment. On a host whose
+   integrated GPU enumerates first, the appliance pins itself to the wrong
+   device. Override at run time with `-e HIP_VISIBLE_DEVICES=<n>`.
+
 ## Build
 ```
 cd container        # from the root of this repository
@@ -54,7 +84,7 @@ curl -s http://localhost:13305/api/v1/chat/completions -H 'Content-Type: applica
 podman run --rm --runtime crun --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
   -v "$MODELS:/models:ro" roc8-lemonade:tr713 bench
-# or:  ... roc8-lemonade:tr713 ppl -f /wiki/wiki.test.raw --chunks 20 -ngl 99   (mount /wiki)
+# or:  ... roc8-lemonade:tr713 ppl -f /wiki/wiki.test.raw --chunks 20 -ngl 99   
 ```
 
 ## Measurements (Qwen3-8B-F8E4M3, GPU0 R9700 gfx1201)

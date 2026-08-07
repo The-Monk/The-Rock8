@@ -24,6 +24,11 @@ MODEL_NAME="${MODEL_NAME:-Qwen3-8B-FP8}"
 LEM_CACHE="${LEMONADE_CACHE_DIR:-/root/.cache/lemonade}"
 PORT="${LEMONADE_PORT:-13305}"
 
+# Serving defaults. The README documents continuous batching as on by default,
+# so it has to actually be passed -- an earlier version of this file documented
+# it and never set it. Override wholesale with LLAMA_ARGS=...
+LLAMA_ARGS="${LLAMA_ARGS:--ngl 999 --cont-batching}"
+
 register_model() {
   # Direct-path checkpoint: lemonade uses it verbatim when the file exists.
   mkdir -p "$LEM_CACHE"

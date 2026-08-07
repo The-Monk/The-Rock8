@@ -51,7 +51,7 @@ groups | grep -E 'render|video'      # you must be in one of these
 # 2. crun is REQUIRED -- runc does not pass the GPU through
 sudo apt install -y podman crun
 
-# 3. pull
+# 3. pull  (~2.4 GB download, ~10 GB on disk once unpacked)
 podman pull ghcr.io/the-monk/the-rock8:rdna4-tr713
 
 # 4. get a model (any fp8 GGUF from the table below)
@@ -76,7 +76,7 @@ If it prints no `Device 0`, the container is not seeing the card — check step 
 | `no ROCm-capable device` | you used `runc`; pass `--runtime crun` |
 | permission denied on `/dev/kfd` | not in the `render` group, or missing `--group-add keep-groups` |
 | `ERROR: no GGUF at /models/...` | model filename differs — set `MODEL=/models/<yourfile>.gguf` |
-| pull says `denied` | the package is private; it is meant to be public — please open an issue |
+| pull says `denied` or `manifest unknown` | registry hiccup — the image is public; retry, and open an issue if it persists |
 
 This is a **gfx1201 (RDNA4)** image. On RDNA3 or older it will run but the
 RDNA4-specific kernels (fp8 WMMA, int4 dot, 2:4 sparse) do not exist on that

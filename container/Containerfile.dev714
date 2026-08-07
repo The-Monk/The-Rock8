@@ -1,0 +1,116 @@
+# The Rock8 — RDNA4 (gfx1201) AI developer appliance
+#
+# ROCm 7.14 (TheRock SDK) + llama.cpp branch roc8 + the AMD toolchain + the agent
+# skills, in one rootless-Podman image. Supersedes the 7.13 runtime-only image.
+#
+# What changed versus the previous build (f36df0f3c, 13 July, ROCm 7.13):
+#   * ROCm 7.13 -> 7.14, and the *devel* SDK rather than a runtime-only tree, so
+#     the AMD tools ship with it instead of being absent.
+#   * llama.cpp rebuilt from roc8 HEAD, which adds the nine hipBLASLt prefill
+#     routes, the decode dedup lever, the GGML_TYPE_Q2_0 validation fix and
+#     hipBLASLt weight-cache invalidation -- all missing from the old image.
+#   * Adds Quark (quantisation), Magpie (kernel evaluation), ROCm Validation
+#     Suite, and the AMD Agent Skills.
+#
+# BUILD CONTEXT (staged, not in git -- see container/README.md):
+#   rocm714/   the _rocm_sdk_devel tree for gfx1201  (~4.4 GB)
+#   llama/     binaries from build-image714           (~80 MB)
+#   rvs/       ROCmValidationSuite build/bin + conf   (~2 MB)
+#   skills/    the AMD Agent Skills tree              (~2 MB)
+#
+# The size is deliberate: this is a development image. If you only want to run a
+# model, the runtime-only tag is smaller -- see container/README.md.
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-venv python3-pip \
+        libatomic1 libnuma1 libdrm2 libelf1 \
+        curl ca-certificates git jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---- ROCm 7.14 (devel SDK: runtime + compilers + profilers + benches) --------
+COPY rocm714/ /opt/rocm714/
+ENV ROCM_PATH=/opt/rocm714 \
+    PATH=/opt/rocm714/bin:/opt/rocm714/lib/llvm/bin:/opt/llama:/opt/venv/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/llama:/opt/rocm714/lib:/opt/rocm714/lib/llvm/lib
+
+# ---- llama.cpp, branch roc8, built against 7.14 for gfx1201 -----------------
+COPY llama/ /opt/llama/
+
+# ---- ROCm Validation Suite --------------------------------------------------
+COPY rvs/ /opt/rvs/
+ENV PATH=/opt/rvs/bin:$PATH
+
+# ---- Framework layer --------------------------------------------------------
+# PyTorch is NOT optional here: Quark is a PyTorch-based quantiser, so an image
+# shipping Quark without torch cannot quantise anything. The gfx1201 wheels come
+# from TheRock; Triton rides along and is the only practical route to custom
+# fused kernels short of raw HIP.
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir \
+         --index-url https://rocm.nightlies.amd.com/v2/gfx120X-all/ \
+         "torch==2.9.1+rocm7.14.0a20260611" pytorch-triton-rocm
+# Pinned deliberately: that index is a NIGHTLY feed and its contents move. The
+# pin is the version verified present at build time; bump it consciously rather
+# than inheriting whatever the feed holds on the day.
+
+# ---- AMD Python toolchain ---------------------------------------------------
+#   quark    quantisation (needs torch, above)
+#   magpie   kernel evaluation
+#   gptqmodel GPTQ/AWQ + GGUF export -- the formats the wider ecosystem loads,
+#             which Quark does not cover
+#   tracelens rocprofv3 trace analysis. This is the ONLY working profiling-
+#             analysis layer on RDNA4: rocprof-compute (the omniperf successor)
+#             is Instinct-only, so there is no roofline/hierarchy view without it.
+#   lemonade OpenAI-compatible serving front-end over the llama.cpp binaries
+RUN /opt/venv/bin/pip install --no-cache-dir \
+         "amd-quark==0.12.post1" \
+         "magpie==0.1.0" \
+         "gptqmodel==7.3.2" \
+         "git+https://github.com/AMD-AGI/TraceLens.git" \
+         "lemonade-sdk"
+
+# ---- deliberately NOT included ----------------------------------------------
+# AITER: gfx1201 is absent from its architecture table, and that gap is precisely
+#   what makes vLLM and SGLang silently dequantise fp8 to fp32 on this card. It
+#   looks essential because those stacks import it; including it would make them
+#   quietly slow rather than fast.
+# TransformerEngine (ROCm): same arch-table gap, CDNA-first.
+# hipSPARSELt: enum-only on gfx1201 -- zero sparse Logic files for this target.
+# flash-attention (ROCm fork): reproducible hipErrorIllegalAddress on gfx1201.
+#   Use attn_implementation="sdpa".
+# ONNX Runtime ROCm EP: removed upstream as of ORT 1.23; MIGraphX EP replaces it.
+
+# ---- AMD Agent Skills -------------------------------------------------------
+COPY skills/ /opt/amd-skills/
+ENV AMD_SKILLS_DIR=/opt/amd-skills
+
+# NOTE: HIP_VISIBLE_DEVICES is deliberately NOT set here. The previous image
+# baked =0, which pinned the appliance to the first enumerated device -- wrong on
+# any host whose integrated GPU enumerates first. Set it at run time if you need
+# to choose: -e HIP_VISIBLE_DEVICES=1
+# Guardrails learned the hard way on this silicon:
+#   HSA_ENABLE_SDMA=0   avoids an illegal-address fault in LoRA backward.
+#   NCCL_PROTO          RCCL below 2.28.x has no gfx1201 tuning entry and falls
+#                       back to CDNA tuning, which DEADLOCKS dual-GPU AllReduce.
+#                       Set NCCL_PROTO=Simple if you hit that on an older RCCL.
+#   Counter reads       rocprofv3 memory counters read ZERO on gfx1201 unless the
+#                       GPU perf level is STABLE_STD:
+#                         amd-smi set --gpu N --perf-level STABLE_STD
+ENV HSA_ENABLE_SDMA=0
+
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+LABEL org.opencontainers.image.title="The Rock8 — RDNA4 AI developer appliance" \
+      org.opencontainers.image.source="https://github.com/The-Monk/The-Rock8" \
+      org.opencontainers.image.licenses="MIT" \
+      rock8.rocm="7.14" \
+      rock8.target="gfx1201" \
+      rock8.includes="llama.cpp(roc8),quark,magpie,rvs,amd-agent-skills"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["serve"]

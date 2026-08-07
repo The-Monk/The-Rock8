@@ -48,33 +48,21 @@ RUN set -eux; \
     ROOT="$(dirname "$(dirname "$SLOT")")"; \
     mkdir -p "$SLOT"; \
     for f in /opt/llama/*; do ln -sf "$f" "$SLOT/$(basename "$f")"; done; \
-    VER="$(/opt/venv/bin/python - <<'PYV'
-import re, pathlib, sys
-# Ask the installed lemonade what llama.cpp build it expects, rather than guessing.
-hits = []
-for base in sys.path:
-    for f in pathlib.Path(base).rglob('*.py') if pathlib.Path(base).is_dir() else []:
-        if 'lemonade' not in str(f):
-            continue
-        try:
-            m = re.search(r'LLAMA_VERSION_ROCM\s*=\s*["\']([^"\']+)', f.read_text(errors='ignore'))
-        except Exception:
-            continue
-        if m:
-            hits.append(m.group(1))
-if not hits:
-    sys.exit('FATAL: could not read LLAMA_VERSION_ROCM from the installed lemonade')
-print(hits[0])
-PYV
-)"; \
-    echo "lemonade expects llama.cpp build: $VER"; \
+    # lemond declares the llama.cpp build it wants in resources/backend_versions.json
+    # and records what is installed in version.txt; when they disagree it REINSTALLS,
+    # replacing our binaries with stock ones. So read the wanted version rather than
+    # hardcoding it -- an earlier revision pinned the literal 'b1066', which was
+    # already stale against the shipping SDK.
+    BV="$(find / -name backend_versions.json -path '*resources*' 2>/dev/null | head -1)"; \
+    test -n "$BV" || { echo "FATAL: backend_versions.json not found; cannot learn the wanted version"; exit 1; }; \
+    VER="$(/opt/venv/bin/python -c "import json,sys; d=json.load(open('$BV'))['llamacpp']; print(d.get('rocm-stable') or d.get('rocm-nightly') or d.get('rocm'))")"; \
+    test -n "$VER" -a "$VER" != None || { echo "FATAL: no llamacpp rocm version in $BV"; exit 1; }; \
+    echo "lemond wants llama.cpp $VER; declaring that for our binaries"; \
     printf '%s' "$VER" > "$ROOT/version.txt"; \
     printf 'rocm'      > "$ROOT/backend.txt"; \
-    # VERIFICATION -- the part that makes a silent swap impossible. The binary in
-    # the slot must be ours. If lemonade ever replaces it, this fails the build.
-    test -L "$SLOT/llama-server" || { echo "FATAL: slot binary is not our symlink"; exit 1; }; \
+    # Verification -- the part that makes a silent swap impossible.
     readlink -f "$SLOT/llama-server" | grep -q '^/opt/llama/' \
-      || { echo "FATAL: slot resolves outside /opt/llama -- stock binaries would be used"; exit 1; }; \
+      || { echo "FATAL: slot resolves outside /opt/llama; stock binaries would be used"; exit 1; }; \
     "$SLOT/llama-server" --version 2>&1 | head -2
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

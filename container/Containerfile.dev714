@@ -82,52 +82,22 @@ RUN set -eux; \
     ROOT="$(dirname "$(dirname "$SLOT")")"; \
     mkdir -p "$SLOT"; \
     for f in /opt/llama/*; do ln -sf "$f" "$SLOT/$(basename "$f")"; done; \
-    VER="$(/opt/venv/bin/python -c "
-import re,pathlib,sys
-for base in sys.path:
-    b=pathlib.Path(base)
-    if not b.is_dir(): continue
-    for f in b.rglob('*.py'):
-        if 'lemonade' not in str(f): continue
-        try: m=re.search(r'LLAMA_VERSION_ROCM\\s*=\\s*[\"\']([^\"\']+)', f.read_text(errors='ignore'))
-        except Exception: continue
-        if m: print(m.group(1)); raise SystemExit
-raise SystemExit('FATAL: LLAMA_VERSION_ROCM not found in installed lemonade')
-")"; \
-    echo "lemonade expects: $VER"; \
+    # lemond declares the llama.cpp build it wants in resources/backend_versions.json
+    # and records what is installed in version.txt; when they disagree it REINSTALLS,
+    # replacing our binaries with stock ones. So read the wanted version rather than
+    # hardcoding it -- an earlier revision pinned the literal 'b1066', which was
+    # already stale against the shipping SDK.
+    BV="$(find / -name backend_versions.json -path '*resources*' 2>/dev/null | head -1)"; \
+    test -n "$BV" || { echo "FATAL: backend_versions.json not found; cannot learn the wanted version"; exit 1; }; \
+    VER="$(/opt/venv/bin/python -c "import json,sys; d=json.load(open('$BV'))['llamacpp']; print(d.get('rocm-stable') or d.get('rocm-nightly') or d.get('rocm'))")"; \
+    test -n "$VER" -a "$VER" != None || { echo "FATAL: no llamacpp rocm version in $BV"; exit 1; }; \
+    echo "lemond wants llama.cpp $VER; declaring that for our binaries"; \
     printf '%s' "$VER" > "$ROOT/version.txt"; \
     printf 'rocm'      > "$ROOT/backend.txt"; \
+    # Verification -- the part that makes a silent swap impossible.
     readlink -f "$SLOT/llama-server" | grep -q '^/opt/llama/' \
-      || { echo "FATAL: slot resolves outside /opt/llama"; exit 1; }
-
-# ---- deliberately NOT included ----------------------------------------------
-# AITER: gfx1201 is absent from its architecture table, and that gap is precisely
-#   what makes vLLM and SGLang silently dequantise fp8 to fp32 on this card. It
-#   looks essential because those stacks import it; including it would make them
-#   quietly slow rather than fast.
-# TransformerEngine (ROCm): same arch-table gap, CDNA-first.
-# hipSPARSELt: enum-only on gfx1201 -- zero sparse Logic files for this target.
-# flash-attention (ROCm fork): reproducible hipErrorIllegalAddress on gfx1201.
-#   Use attn_implementation="sdpa".
-# ONNX Runtime ROCm EP: removed upstream as of ORT 1.23; MIGraphX EP replaces it.
-
-# ---- AMD Agent Skills -------------------------------------------------------
-COPY skills/ /opt/amd-skills/
-ENV AMD_SKILLS_DIR=/opt/amd-skills
-
-# NOTE: HIP_VISIBLE_DEVICES is deliberately NOT set here. The previous image
-# baked =0, which pinned the appliance to the first enumerated device -- wrong on
-# any host whose integrated GPU enumerates first. Set it at run time if you need
-# to choose: -e HIP_VISIBLE_DEVICES=1
-# Guardrails learned the hard way on this silicon:
-#   HSA_ENABLE_SDMA=0   avoids an illegal-address fault in LoRA backward.
-#   NCCL_PROTO          RCCL below 2.28.x has no gfx1201 tuning entry and falls
-#                       back to CDNA tuning, which DEADLOCKS dual-GPU AllReduce.
-#                       Set NCCL_PROTO=Simple if you hit that on an older RCCL.
-#   Counter reads       rocprofv3 memory counters read ZERO on gfx1201 unless the
-#                       GPU perf level is STABLE_STD:
-#                         amd-smi set --gpu N --perf-level STABLE_STD
-ENV HSA_ENABLE_SDMA=0
+      || { echo "FATAL: slot resolves outside /opt/llama; stock binaries would be used"; exit 1; }; \
+    "$SLOT/llama-server" --version 2>&1 | head -2
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

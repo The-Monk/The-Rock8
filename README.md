@@ -356,6 +356,14 @@ treat a counter reading exactly zero as "unsupported" rather than as data.**
 | **Continuous batching -- multi-user serving** (`--cont-batching`, default) | Merges concurrent decode steps: one weight read advances **N** sequences (the amortization that makes serving fast) | **Serve a handful of concurrent users/agents off one card -- the vLLM replacement on RDNA4.** Aggregate throughput on the 35B-A3B fp8 MoE scales **65 -> 537 t/s (8.2x), peaking at npl~114**, then knees as the MoE's routed-expert union saturates. `npl=8` is an early rung at 4.06x, not the ceiling. There is a reproducible ~+-11% batch-tiling alignment effect: **set `--parallel` to a value that is 2 mod 4** (110/114/118 give 531-537 t/s; 112/116 give 451-490). realizing the same batching amortization that was vLLM's "server win" -- but *natively* and *with fp8* (vLLM silently dequants fp8 on gfx1201, so its win evaporates here). vLLM's KV-memory edge is **already halved on The Rock8 by fp8 KV-cache** (`-ctk/-ctv f8e4m3` -> ~2x the sequences/GB, on top of the fp8 weights) -- **but note fp8-KV is INCOMPATIBLE with batched decode on this hybrid-SSM MoE (breaks B>1); batching runs f16-KV only, and fp8-KV stays a single-stream lever** -- the only remaining piece is PagedAttention's fragmentation-free *paging*, which is landing in llama.cpp (#21961). |
 
 ### Operations
+
+> **Auto-context / OOM protection comes from Lemonade, not from us.** An earlier
+> revision of this file listed a `roc8-autoctx` feature that exists in no source
+> file in any of our repositories. It was removed — but the capability itself is
+> real: upstream Lemonade ships `resolve_auto_ctx_size` (`auto_tune.h`,
+> `router.cpp`), and the binary in this image has it. Use Lemonade's, not ours.
+
+### Operations
 | Feature | What it is | Use case |
 |---|---|---|
 | **The Lemonade appliance** | Rootless-Podman image (`ubuntu:24.04` + TheRock 7.13, one extra dep: `libatomic1`) | One-command portable RDNA4 AI stack. Proven to run pure-7.13 with **zero `/opt/rocm`** on the host. Requires `crun` for GPU passthrough (not `runc`). |

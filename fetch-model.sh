@@ -9,6 +9,11 @@
 #   ./fetch-model.sh 8b              # download to ./models
 #   MODELS_DIR=/data ./fetch-model.sh 27b
 set -uo pipefail
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+  echo "This script needs bash >= 4 (associative arrays). You have ${BASH_VERSION:-unknown}." >&2
+  echo "On macOS: brew install bash, then run with that bash." >&2
+  exit 1
+fi
 DEST="${MODELS_DIR:-./models}"
 
 declare -A REPO=(
@@ -41,20 +46,29 @@ KEY="${1,,}"
 [ -n "${REPO[$KEY]:-}" ] || { echo "unknown model '$KEY' -- run with no arguments to list" >&2; exit 1; }
 R="${REPO[$KEY]}"
 
-command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
+for t in curl python3; do
+  command -v "$t" >/dev/null || { echo "$t is required but not installed" >&2; exit 1; }
+done
 echo "resolving filename for Gorilla4X/$R ..."
-FILE=$(curl -fsSL "https://huggingface.co/api/models/Gorilla4X/$R" \
-  | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-g=[x['rfilename'] for x in d.get('siblings',[]) if x['rfilename'].endswith('.gguf')]
-print(g[0] if g else '')" 2>/dev/null)
-[ -n "$FILE" ] || { echo "could not resolve a .gguf in that repo -- check the collection link" >&2; exit 1; }
+META=$(curl -fsSL "https://huggingface.co/api/models/Gorilla4X/$R") || {
+  echo "could not reach the Hugging Face API for Gorilla4X/$R" >&2; exit 1; }
+FILE=$(printf '%s' "$META" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+g = sorted(x['rfilename'] for x in d.get('siblings', []) if x['rfilename'].endswith('.gguf'))
+if len(g) > 1:
+    sys.stderr.write('note: %d GGUFs in this repo; taking %s\\n' % (len(g), g[0]))
+print(g[0] if g else '')")
+[ -n "$FILE" ] || { echo "no .gguf found in Gorilla4X/$R" >&2; exit 1; }
 
 mkdir -p "$DEST"
 echo "downloading $FILE -> $DEST/"
-curl -fL --progress-bar -o "$DEST/$FILE" \
-  "https://huggingface.co/Gorilla4X/$R/resolve/main/$FILE"
+if ! curl -fL --progress-bar -o "$DEST/$FILE.part" \
+     "https://huggingface.co/Gorilla4X/$R/resolve/main/$FILE"; then
+  echo "download failed; leaving $DEST/$FILE.part in place for a resume" >&2
+  exit 1
+fi
+mv -f "$DEST/$FILE.part" "$DEST/$FILE"
 
 echo
 echo "done: $DEST/$FILE"

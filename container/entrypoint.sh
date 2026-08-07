@@ -7,13 +7,19 @@
 set -euo pipefail
 
 MODEL="${MODEL:-/models/Qwen3-8B-Quark-F8E4M3.gguf}"
-if [ ! -f "$MODEL" ]; then
+
+# Subcommands that need a model check for one; `bash` and a model-less `serve`
+# must still work. An earlier revision exited here unconditionally, which broke
+# both -- the guard has to sit inside the dispatch, not before it.
+require_model() {
+  [ -f "$MODEL" ] && return 0
   echo "ERROR: no GGUF at $MODEL" >&2
-  echo "  Mount your model dir with  -v /path/to/models:/models:ro" >&2
-  echo "  and set MODEL=/models/<file>.gguf if the name differs." >&2
-  echo "  Present in /models:" >&2; ls -1 /models 2>/dev/null | sed "s|^|    |" >&2
+  echo "  Mount your model dir:  -v /path/to/models:/models:ro" >&2
+  echo "  Name it if it differs: -e MODEL=/models/<file>.gguf" >&2
+  echo "  Present in /models:" >&2
+  ls -1 /models 2>/dev/null | sed "s|^|    |" >&2 || echo "    (nothing mounted at /models)" >&2
   exit 1
-fi
+}
 MODEL_NAME="${MODEL_NAME:-Qwen3-8B-FP8}"
 LEM_CACHE="${LEMONADE_CACHE_DIR:-/root/.cache/lemonade}"
 PORT="${LEMONADE_PORT:-13305}"
@@ -55,10 +61,12 @@ case "${1:-serve}" in
     exec /opt/venv/bin/lemonade-server-dev serve --host 0.0.0.0 --port "$PORT" --llamacpp rocm
     ;;
   bench)
+    require_model
     shift
     exec /opt/llama/llama-bench -m "$MODEL" $( [ $# -eq 0 ] && echo "-p 128 -n 32 -ngl 99" ) "$@"
     ;;
   ppl)
+    require_model
     shift
     exec /opt/llama/llama-perplexity -m "$MODEL" "$@"
     ;;

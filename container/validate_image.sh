@@ -15,11 +15,11 @@ $RUN --entrypoint bash $IMG -c '
 
 echo "########## B) llama-bench from built image ##########"
 $RUN --entrypoint /opt/llama/llama-bench $IMG \
-  -m /models/Qwen3-8B-F8E4M3.gguf -p 128 -n 32 -ngl 99 2>&1 | grep -iE "Device 0|qwen3|error" | tee $SC/img_bench.txt
+  -m /models/Qwen3-8B-Quark-F8E4M3.gguf -p 128 -n 32 -ngl 99 2>&1 | grep -iE "Device 0|qwen3|error" | tee $SC/img_bench.txt
 
 echo "########## C) llama-perplexity from built image ##########"
 $RUN -v ${WIKITEXT:?set WIKITEXT to your wikitext-2-raw directory}:/wiki:ro \
   --entrypoint /opt/llama/llama-perplexity $IMG \
-  -m /models/Qwen3-8B-F8E4M3.gguf -f /wiki/wiki.test.raw --chunks 20 -ngl 99 2>&1 | grep -iE "Final estimate" | tee $SC/img_ppl.txt
+  -m /models/Qwen3-8B-Quark-F8E4M3.gguf -f /wiki/wiki.test.raw --chunks 20 -ngl 99 2>&1 | grep -iE "Final estimate" | tee $SC/img_ppl.txt
 
 echo "DONE"

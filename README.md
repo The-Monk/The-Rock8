@@ -1,7 +1,7 @@
 # The Rock8 - Got any weights? 💪🦆
 ### RDNA4 (gfx1201) native-fp8 llama.cpp + Lemonade appliance
 
-The Rock8 is a fork of llama.cpp/ggml that adds **native low-precision matrix
+The Rock8 packages a fork of llama.cpp/ggml that adds **native low-precision matrix
 kernels for AMD RDNA4** (gfx1201 - Radeon AI PRO R9700, RX 9070 / 9070 XT,
 W-series), packaged as a one-command rootless-Podman appliance on the
 AMD TheRock ROCm 7.13 toolchain.
@@ -29,12 +29,58 @@ appliance below runs it.
 | [**Quacken-Ornith-35B-FP8**](https://huggingface.co/Gorilla4X/Quacken-Ornith-35B-FP8) | Ornith-1.0-35B (Apache-2.0) | 35B | 37.8 GB | 6.70 | -- | -- |
 
 - **Collection:** [The Rock8 - RDNA4 fp8](https://huggingface.co/collections/Gorilla4X/the-rock8-rdna4-fp8-6a547070f667cb41db0bc2ed) (all models, one place).
-- **All 5 live.** Each Quark-quantized from full-precision BF16, validated on gfx1201.
+- **All 5 published.** Each Quark-quantized from full-precision BF16, validated on gfx1201.
 
 > PPL is wikitext, 20 chunks, `n_ctx=512`. Prefill/decode are `llama-bench` on
 > gfx1201 (R9700); the 27B decode figure is 2-GPU (tensor-split).
 
 ---
+
+## 0. Get an RDNA4 card working — start here
+
+If you have a Radeon RX 9070 / 9070 XT / AI PRO R9700 and cannot get local LLM
+inference running, this is the shortest path. It needs Podman and a working
+`amdgpu` kernel driver. **It does not need ROCm installed on your host** — the
+image carries its own.
+
+```bash
+# 1. check the GPU is visible to the kernel (this is the usual failure point)
+ls /dev/kfd /dev/dri/renderD*        # both must exist
+groups | grep -E 'render|video'      # you must be in one of these
+
+# 2. crun is REQUIRED -- runc does not pass the GPU through
+sudo apt install -y podman crun
+
+# 3. pull
+podman pull ghcr.io/the-monk/the-rock8:rdna4-tr713
+
+# 4. get a model (any fp8 GGUF from the table below)
+mkdir -p ~/models && cd ~/models
+curl -LO https://huggingface.co/Gorilla4X/Quacken-8B-FP8/resolve/main/Qwen3-8B-Quark-F8E4M3.gguf
+
+# 5. run a benchmark to confirm the card is actually being used
+podman run --rm --runtime crun \
+  --device /dev/kfd --device /dev/dri \
+  --group-add keep-groups --security-opt seccomp=unconfined \
+  -v ~/models:/models:ro \
+  ghcr.io/the-monk/the-rock8:rdna4-tr713 bench
+```
+
+A working run prints a `Device 0` line naming your GPU and a tokens/second figure.
+If it prints no `Device 0`, the container is not seeing the card — check step 1.
+
+**Common failures**
+
+| Symptom | Cause |
+|---|---|
+| `no ROCm-capable device` | you used `runc`; pass `--runtime crun` |
+| permission denied on `/dev/kfd` | not in the `render` group, or missing `--group-add keep-groups` |
+| `ERROR: no GGUF at /models/...` | model filename differs — set `MODEL=/models/<yourfile>.gguf` |
+| pull says `denied` | the package is private; it is meant to be public — please open an issue |
+
+This is a **gfx1201 (RDNA4)** image. On RDNA3 or older it will run but the
+RDNA4-specific kernels (fp8 WMMA, int4 dot, 2:4 sparse) do not exist on that
+silicon and will not be used.
 
 ## 1. Shipped features - what they do and when to use them
 
@@ -210,7 +256,6 @@ below is representative, not exhaustive — others exist (`mul_mat_q2_0_wmma.cu`
 ### Operations
 | Feature | What it is | Use case |
 |---|---|---|
-| **Auto-ctx / OOM-guard** (`roc8-autoctx`) | Sizes context to free VRAM (model + KV, fp8-KV-aware); CPU-spill + desktop/GDM headroom aware; caps `-ngl` <= cores-1; clamps API-forced ctx; `--bypass-oom` escape | Prevents the classic "load OOMs the card" failure. The Lemonade default so users never hand-tune ctx. Rejects an oversized API `ctx_size` and forces it back to the computed max (or errors, your choice). |
 | **The Lemonade appliance** | Rootless-Podman image (`ubuntu:24.04` + TheRock 7.13, one extra dep: `libatomic1`) | One-command portable RDNA4 AI stack. Proven to run pure-7.13 with **zero `/opt/rocm`** on the host. Requires `crun` for GPU passthrough (not `runc`). |
 
 ---
@@ -353,4 +398,4 @@ The published model weights are **derivatives** and carry their **source model's
 license** - attributed on each model card:
 Quacken-8B-FP8 (Apache-2.0, from Qwen/Qwen3-8B),
 Quacken-R1-14B-FP8 (MIT, from DeepSeek-R1-Distill-Qwen-14B).
-Coming: Quacken-27B-FP8 (Apache-2.0, from Qwen3.6-27B).
+Quacken-27B-FP8 (Apache-2.0, from Qwen3.6-27B), Quacken-35B-A3B-FP8 (Apache-2.0, from Qwen3.6-35B-A3B), Quacken-Ornith-35B-FP8 (Apache-2.0, from Ornith-1.0-35B).

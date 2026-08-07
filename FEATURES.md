@@ -1,7 +1,7 @@
 # The Rock8 — Got any weights? 💪🦆
 ### RDNA4 (gfx1201) native-fp8 llama.cpp + Lemonade appliance
 
-The Rock8 is a fork of llama.cpp/ggml that adds **native low-precision matrix
+The Rock8 packages a fork of llama.cpp/ggml that adds **native low-precision matrix
 kernels for AMD RDNA4** (gfx1201 — Radeon AI PRO R9700, RX 9070 / 9070 XT,
 W-series), packaged as a one-command rootless-Podman appliance on the
 AMD TheRock ROCm 7.13 toolchain.
@@ -37,7 +37,6 @@ yet usable, we say so plainly and explain what would unblock it.
 ### Operations
 | Feature | What it is | Use case |
 |---|---|---|
-| **Auto-ctx / OOM-guard** (`roc8-autoctx`) | Sizes context to free VRAM (model + KV, fp8-KV-aware); CPU-spill + desktop/GDM headroom aware; caps `-ngl` ≤ cores−1; clamps API-forced ctx; `--bypass-oom` escape | Prevents the classic "load OOMs the card" failure. The Lemonade default so users never hand-tune ctx. Rejects an oversized API `ctx_size` and forces it back to the computed max (or errors, your choice). |
 | **The Lemonade appliance** | Rootless-Podman image (`ubuntu:24.04` + TheRock 7.13, one extra dep: `libatomic1`) | One-command portable RDNA4 AI stack. Proven to run pure-7.13 with **zero `/opt/rocm`** on the host. Requires `crun` for GPU passthrough (not `runc`). |
 
 ---

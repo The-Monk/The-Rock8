@@ -6,7 +6,14 @@
 #   bash    -> drop to a shell
 set -euo pipefail
 
-MODEL="${MODEL:-/models/Qwen3-8B-F8E4M3.gguf}"
+MODEL="${MODEL:-/models/Qwen3-8B-Quark-F8E4M3.gguf}"
+if [ ! -f "$MODEL" ]; then
+  echo "ERROR: no GGUF at $MODEL" >&2
+  echo "  Mount your model dir with  -v /path/to/models:/models:ro" >&2
+  echo "  and set MODEL=/models/<file>.gguf if the name differs." >&2
+  echo "  Present in /models:" >&2; ls -1 /models 2>/dev/null | sed "s|^|    |" >&2
+  exit 1
+fi
 MODEL_NAME="${MODEL_NAME:-Qwen3-8B-FP8}"
 LEM_CACHE="${LEMONADE_CACHE_DIR:-/root/.cache/lemonade}"
 PORT="${LEMONADE_PORT:-13305}"
@@ -49,7 +56,7 @@ case "${1:-serve}" in
     ;;
   bench)
     shift
-    exec /opt/llama/llama-bench -m "$MODEL" "${@:--p 128 -n 32 -ngl 99}"
+    exec /opt/llama/llama-bench -m "$MODEL" $( [ $# -eq 0 ] && echo "-p 128 -n 32 -ngl 99" ) "$@"
     ;;
   ppl)
     shift

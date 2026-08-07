@@ -2,6 +2,13 @@ MIT License
 
 Copyright (c) 2026 The Rock8 contributors
 
+This repository contains documentation and container recipes only. It contains no
+llama.cpp source. The container image it builds redistributes binaries derived
+from llama.cpp (MIT, Copyright (c) 2023-2026 The ggml authors) and AMD ROCm
+components from TheRock, each under their own licenses; those notices travel with
+the image. Published model weights are derivatives and carry their source model's
+license, attributed on each model card.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

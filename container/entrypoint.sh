@@ -29,6 +29,18 @@ PORT="${LEMONADE_PORT:-13305}"
 # it and never set it. Override wholesale with LLAMA_ARGS=...
 LLAMA_ARGS="${LLAMA_ARGS:--ngl 999 --cont-batching}"
 
+# Activation-quant dedup: verified lossless across every shipped format
+# (VALIDATION-2026-08-11.md; PPL byte-identical) and the cheapest decode
+# capture on the board, so the appliance defaults it ON for all subcommands.
+# ggml's check is PRESENCE-based (any value, even empty, enables), so the only
+# way to disable is to unset: pass -e GGML_HIP_DEDUP_MMVQ_QUANT=0 and this
+# block unsets it. Anything else (including leaving it alone) means enabled.
+for _v in GGML_HIP_DEDUP_MMVQ_QUANT GGML_HIP_DEDUP_MMVQ_QUANT_BATCH; do
+  eval "_val=\${$_v:-1}"
+  if [ "$_val" = "0" ]; then unset "$_v"; else export "$_v=1"; fi
+done
+unset _v _val
+
 register_model() {
   # Direct-path checkpoint: lemonade uses it verbatim when the file exists.
   # LLAMA_ARGS is passed through recipe_options.llamacpp_args -- that is the

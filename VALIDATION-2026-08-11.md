@@ -83,3 +83,31 @@ model-blocked IU4/2:4-sparse paths (see README §2).
    IU4-style repack onto the 95–97%-roofline int4 dot8 path.
 6. **Q5_K/Q6_K (77–84%)**: candidates for the same rows-per-block/nwarps sweep
    Q4_K received (+2.9%), plus dedup applies.
+
+## Addendum (same day): items 2 and 5 captured — image `3f7a40a52`
+
+Both same-day fixes are in the now-published image (build `3f7a40a52`, tags
+`rdna4-tr713`/`latest`/`3f7a40a52`); the matrix above describes the superseded
+`56860a8fa` build.
+
+**Q1_0 decode dot rewritten** (roc8 `3f7a40a52`): the per-bit select chain
+that materialized ±1 bytes was replaced with the 2c−1 identity — bit-spread
+the raw bits into `{0,1}`-byte dp4a operands, fold `dot(s,u) = 2·dot(c,u) −
+sum(u)` through the q8_1 stored sum. `test-backend-ops` q1_0: all pass, exact.
+
+**Dedup is now the appliance default**: the entrypoint exports
+`GGML_HIP_DEDUP_MMVQ_QUANT` (+`_BATCH`) for every subcommand; pass
+`-e GGML_HIP_DEDUP_MMVQ_QUANT=0` to disable (the entrypoint translates `=0`
+into an unset, since ggml's check is presence-based — verified both ways).
+
+Re-measured in the published image (Bonsai-27B, 1× R9700, tg128):
+
+| | old image `56860a8fa` | new kernel, dedup off | **new image default** |
+|---|---|---|---|
+| Q1_0 | 43.96 | 56.38 | **58.34 (+33%)** |
+| Q2_0 | 49.62 | — | **51.07 (+2.9%)** |
+
+Lemonade round-trip re-verified on the final image (fingerprint
+`b9966-3f7a40a52`). The same Q1_0 fix was contributed to PrismML as the second
+commit on [PrismML-Eng/llama.cpp#116](https://github.com/PrismML-Eng/llama.cpp/pull/116)
+(their tree: 54.53 → 63.03, 64.93 with dedup).

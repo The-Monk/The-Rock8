@@ -31,18 +31,23 @@ LLAMA_ARGS="${LLAMA_ARGS:--ngl 999 --cont-batching}"
 
 register_model() {
   # Direct-path checkpoint: lemonade uses it verbatim when the file exists.
+  # LLAMA_ARGS is passed through recipe_options.llamacpp_args -- that is the
+  # mechanism by which --cont-batching actually reaches llama-server. A prior
+  # revision defined LLAMA_ARGS and never used it, so the documented default
+  # was silently not applied (caught by the 2026-08-10 validation pass).
   mkdir -p "$LEM_CACHE"
-  /opt/venv/bin/python - "$MODEL_NAME" "$MODEL" "$LEM_CACHE" <<'PY'
+  /opt/venv/bin/python - "$MODEL_NAME" "$MODEL" "$LEM_CACHE" "$LLAMA_ARGS" <<'PY'
 import json, os, sys
-name, ckpt, cache = sys.argv[1], sys.argv[2], sys.argv[3]
+name, ckpt, cache, llama_args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 f = os.path.join(cache, "user_models.json")
 data = {}
 if os.path.exists(f):
     data = json.load(open(f))
 data[name] = {"checkpoint": ckpt, "recipe": "llamacpp",
+              "recipe_options": {"llamacpp_args": llama_args},
               "suggested": True, "labels": ["custom"], "source": "local_upload"}
 json.dump(data, open(f, "w"))
-print(f"registered {name} -> {ckpt}")
+print(f"registered {name} -> {ckpt} (llamacpp_args: {llama_args})")
 PY
   # Force rocm backend + our binaries
   CFG="$LEM_CACHE/config.json"

@@ -67,7 +67,8 @@ git clone --recursive https://github.com/The-Monk/The-Rock8 && cd The-Rock8
 ./fetch-model.sh 8b         # ~9 GB, downloads into ./models
 
 # 5. run a benchmark to confirm the card is actually being used
-#    -e MODEL is REQUIRED: the image's built-in default names an older filename
+#    -e MODEL selects the GGUF; the image default is /models/Qwen3-8B-Quark-F8E4M3.gguf
+#    (the file `./fetch-model.sh 8b` downloads) -- set it explicitly for any other model
 podman run --rm --runtime crun \
   --device /dev/kfd --device /dev/dri \
   --group-add keep-groups --security-opt seccomp=unconfined \
@@ -101,15 +102,14 @@ kernels"; that was wrong.
 > The container table (section 4) and the perplexity column are the two you can
 > reproduce directly. `INT6 2.46x` is explicitly a byte ratio, not a measurement.
 
-> **The published image is older than this repository.** The image on ghcr is
-> build `f36df0f3c` (13 July 2026); the kernel submodule tracks `roc8` HEAD
-> (`3114c471f`, 5 August). Features added between those dates — the nine
-> hipBLASLt prefill routes, the decode dedup lever, the `GGML_TYPE_Q2_0`
-> validation fix and hipBLASLt weight-cache invalidation — are **not in the image
-> you pull**. Their environment variables are silent no-ops there. The image is
-> a working RDNA4 fp8 inference stack; it is not yet a build of the tree
-> documented below. A rebuilt image is needed to close this, and until then this
-> note is the honest statement of what you get.
+> **The published image is a build of this tree.** The image on ghcr is build
+> `56860a8fa` (11 August 2026), the same commit the kernel submodule pins and
+> public `roc8` HEAD. The hipBLASLt prefill routes, the decode dedup lever, the
+> `GGML_TYPE_Q2_0` validation fix, hipBLASLt weight-cache invalidation and
+> `llama-completion` are all in the image you pull, and the environment
+> variables documented below are live there. (An earlier image, `f36df0f3c` of
+> 13 July, predated all of these and additionally had a broken no-argument
+> `bench` mode; if your pull shows that build marker, pull again.)
 
 > **Pull, don't build.** The `Containerfile` needs two large staged directories
 > (a TheRock ROCm tree and the built `roc8` binaries) that are gitignored and not

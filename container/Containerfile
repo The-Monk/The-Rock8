@@ -35,29 +35,23 @@ RUN python3 -m venv /opt/venv \
 # Point lemonade's rocm llama_server slot at OUR binaries so it never downloads
 # the stock llamacpp-rocm build.
 #
-# The version marker must match whatever the INSTALLED lemonade expects. An
-# earlier revision hardcoded 'b1066'; the currently-shipping lemonade expects
-# b9747, so that literal was already stale -- and the failure mode is silent:
-# lemonade sees a mismatch, downloads stock binaries, and the image builds and
-# runs fine while no longer being The Rock8 at all.
-#
-# So: derive the marker from the installed package, then VERIFY the binary
-# lemonade actually resolves is ours, and fail the build if it is not.
+# The version marker must match whatever the INSTALLED lemonade expects, and
+# where that lives has now changed twice (hardcoded module constant -> a
+# resources/backend_versions.json -> back to the module constant; the current
+# SDK's backend_versions.json covers only FLM). Chasing file paths is what
+# broke the previous revision of this step, so ask the SDK itself: its
+# public helpers are the one interface that tracks these moves. The failure
+# mode being defended against is silent -- on a marker mismatch lemonade
+# re-downloads stock binaries and the image keeps building and running while
+# no longer being The Rock8 at all -- hence the hard verification below.
 RUN set -eux; \
-    SLOT="$(/opt/venv/bin/python -c 'import sys;print(sys.prefix)')/rocm/llama_server/build/bin"; \
-    ROOT="$(dirname "$(dirname "$SLOT")")"; \
+    ROOT="$(/opt/venv/bin/python -c 'from lemonade.tools.llamacpp.utils import get_llama_folder_path; print(get_llama_folder_path("rocm"))')"; \
+    VER="$(/opt/venv/bin/python -c 'from lemonade.tools.llamacpp.utils import get_llama_version; print(get_llama_version("rocm"))')"; \
+    test -n "$ROOT" && test -n "$VER" || { echo "FATAL: lemonade SDK did not yield rocm folder/version"; exit 1; }; \
+    SLOT="$ROOT/build/bin"; \
     mkdir -p "$SLOT"; \
     for f in /opt/llama/*; do ln -sf "$f" "$SLOT/$(basename "$f")"; done; \
-    # lemond declares the llama.cpp build it wants in resources/backend_versions.json
-    # and records what is installed in version.txt; when they disagree it REINSTALLS,
-    # replacing our binaries with stock ones. So read the wanted version rather than
-    # hardcoding it -- an earlier revision pinned the literal 'b1066', which was
-    # already stale against the shipping SDK.
-    BV="$(find / -name backend_versions.json -path '*resources*' 2>/dev/null | head -1)"; \
-    test -n "$BV" || { echo "FATAL: backend_versions.json not found; cannot learn the wanted version"; exit 1; }; \
-    VER="$(/opt/venv/bin/python -c "import json,sys; d=json.load(open('$BV'))['llamacpp']; print(d.get('rocm-stable') or d.get('rocm-nightly') or d.get('rocm'))")"; \
-    test -n "$VER" -a "$VER" != None || { echo "FATAL: no llamacpp rocm version in $BV"; exit 1; }; \
-    echo "lemond wants llama.cpp $VER; declaring that for our binaries"; \
+    echo "lemonade wants llama.cpp $VER for rocm; declaring that for our binaries"; \
     printf '%s' "$VER" > "$ROOT/version.txt"; \
     printf 'rocm'      > "$ROOT/backend.txt"; \
     # Verification -- the part that makes a silent swap impossible.

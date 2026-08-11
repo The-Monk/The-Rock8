@@ -111,3 +111,17 @@ Lemonade round-trip re-verified on the final image (fingerprint
 `b9966-3f7a40a52`). The same Q1_0 fix was contributed to PrismML as the second
 commit on [PrismML-Eng/llama.cpp#116](https://github.com/PrismML-Eng/llama.cpp/pull/116)
 (their tree: 54.53 → 63.03, 64.93 with dedup).
+
+## Addendum 2 (same day): Q1_0 pushed further — image `70629174b`
+
+Roofline investigation on the Q1_0 decode (kernel trace, PC sampling, three
+geometry sweeps, a VDR experiment — details in the roc8 commit messages):
+the GEMV is 70% of decode GPU time and is latency-bound, not barrier-bound.
+Captured: rows/block re-swept to 6 for the post-rewrite kernel (+7%).
+Published image now `70629174b`: **Q1_0 62.20 t/s** with the dedup default
+(43.96 in the 2026-08-10 image → **+41.5% in one day**), Q2_0 unchanged.
+Not captured tonight: the remaining ~26 t/s to the ~88 t/s whole-model
+ceiling needs either an upstream-base modernization of the fork (the same
+dot arithmetic runs ~12% faster on PrismML's newer tree — see
+PrismML-Eng/llama.cpp#116) or hot-loop surgery (LDS-LUT unpack); both are
+follow-up-sized, not flag-sized.

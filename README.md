@@ -102,16 +102,28 @@ kernels"; that was wrong.
 > The container table (section 4) and the perplexity column are the two you can
 > reproduce directly. `INT6 2.46x` is explicitly a byte ratio, not a measurement.
 
-> **The published image is a build of this tree.** The image on ghcr is build
-> `3f7a40a52` (11 August 2026), the same commit the kernel submodule pins and
-> public `roc8` HEAD. The hipBLASLt prefill routes, the decode dedup lever
-> (default-ON in the appliance, see the dedup row), the rewritten Q1_0 decode
-> dot, the `GGML_TYPE_Q2_0` validation fix, hipBLASLt weight-cache
-> invalidation and `llama-completion` are all in the image you pull, and the
-> environment variables documented below are live there. (Earlier images —
-> `f36df0f3c` of 13 July with a broken no-argument `bench` mode, and the
-> short-lived `56860a8fa` — are superseded; if your pull shows either marker,
-> pull again.)
+> **The published image is a build of this tree.** The image on ghcr is built
+> from `roc8` at `e70c26e4d8` (12 August 2026 build), the same commit the
+> kernel submodule pins and public `roc8` HEAD; its in-image version marker
+> reads `63a9969bd1`, the kernel state it was compiled at (`e70c26e4d8` adds
+> only the container scripts, which are baked into the image). It carries
+> everything the earlier images did — the hipBLASLt prefill routes, the decode
+> dedup lever (default-ON in the appliance, see the dedup row), the rewritten
+> Q1_0 decode dot, the `GGML_TYPE_Q2_0` validation fix, hipBLASLt weight-cache
+> invalidation and `llama-completion` — plus the `MUL_MAT_ID` out-of-bounds
+> write fix for partial `rows_per_block` blocks (wrong MoE decode results with
+> 1-bit/ternary/fp8 experts) and a hardened entrypoint (model-mount guard,
+> explicit `LLAMA_ARGS` pass-through, `-e GGML_HIP_DEDUP_MMVQ_QUANT=0` now
+> actually disables). The environment variables documented below are live
+> there. (Earlier images — `f36df0f3c` of 13 July with a broken no-argument
+> `bench` mode, the short-lived `56860a8fa`, and `3f7a40a52` of 11 August,
+> which carries the MoE OOB bug — are superseded; if your pull shows any of
+> those markers, pull again. The hackathon-submission state remains pinned
+> under the immutable `hackathon-2026-07-submission` tags on both repos.)
+
+> **Post-judging changelog:** the hackathon concluded 19 August 2026; work
+> continued past the frozen submission. [CHANGELOG-POST-JUDGING.md](CHANGELOG-POST-JUDGING.md)
+> tracks what the current stack adds over the submission-era numbers.
 
 > **Pull, don't build.** The `Containerfile` needs two large staged directories
 > (a TheRock ROCm tree and the built `roc8` binaries) that are gitignored and not
